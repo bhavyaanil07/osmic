@@ -16,7 +16,7 @@ window.OSMIC = {
     intro: "OSMIC is a student-driven innovation club born from the desire to create something meaningful for Amma’s birthday. Rooted in sustainability, engineering, and social responsibility, we bring ideas to life through practical, multidisciplinary projects that address real-world challenges.",
     founded: "2026",
     institution: "Amrita Vishwa Vidyapeetham, Amritapuri",
-    portalUrl: "https://bhavyaanil07.github.io/osmic-portal/",   // the OSMIC member portal (login and Apply to join)
+    portalUrl: "portal/",   // the OSMIC member portal, in the portal/ folder of this same site
     email: "osmic.club@example.com",
     instagram: "",
     linkedin: "",

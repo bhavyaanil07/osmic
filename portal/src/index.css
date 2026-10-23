@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-slate-50 font-sans text-slate-900;
+  }
+  ::selection {
+    background: rgba(62, 230, 200, 0.45);
+    color: #141A1F;
+  }
+  :focus-visible {
+    outline: 2px solid #3EE6C8;
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .input {
+    @apply w-full min-h-[44px] rounded-xl border border-slate-300 bg-ink-950/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:shadow-glow;
+  }
+  .label {
+    @apply flex flex-col gap-1.5 text-[13px] font-semibold text-slate-700;
+  }
+  .th {
+    @apply border-b border-slate-200 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500;
+  }
+  .td {
+    @apply border-b border-slate-100 px-4 py-3 align-middle;
+  }
+}
+
+/* The app background: same mood as the OSMIC website hero (lamp glow + cyan glow over backwater night). */
+.cyber-bg {
+  background-color: #06161D;
+  background-image:
+    radial-gradient(ellipse 900px 600px at 80% 0%, rgba(242, 181, 68, 0.10), transparent 60%),
+    radial-gradient(ellipse 900px 700px at 0% 100%, rgba(62, 230, 200, 0.09), transparent 60%),
+    linear-gradient(180deg, #0B2A36 0%, #06161D 60%);
+  background-attachment: fixed;
+}
+
+/* Moving grid used in hero panels. */
+.tech-grid {
+  background-image:
+    radial-gradient(ellipse at 70% 20%, rgba(242, 181, 68, 0.16), transparent 55%),
+    radial-gradient(ellipse at 20% 80%, rgba(62, 230, 200, 0.14), transparent 60%);
+}
+
+/* Faint CRT scanlines over hero panels. */
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(6, 22, 29, 0) 40%, rgba(6, 22, 29, 0.5) 100%);
+}
+
+/* Angled corners for primary buttons and code tiles. */
+.cut {
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+.cut:focus-visible { outline-offset: -4px; outline-color: #06161D; }
+
+.repeating-scan { background: repeating-linear-gradient(to bottom, rgba(255,255,255,0.02) 0 1px, transparent 1px 3px); }
+
+.neon-text { text-shadow: 0 0 12px rgba(62, 230, 200, 0.55), 0 0 32px rgba(62, 230, 200, 0.25); }
+.neon-soft { text-shadow: 0 0 22px rgba(62, 230, 200, 0.22); }
+.neon-pink { text-shadow: 0 0 12px rgba(242, 181, 68, 0.45); }
+
+.gradient-text {
+  background: linear-gradient(90deg, #EEF3F2, #3EE6C8 55%, #F2B544);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Brief RGB-split glitch every few seconds. */
+@keyframes glitch {
+  0%, 90%, 100% { text-shadow: 0 0 18px rgba(62, 230, 200, 0.35); transform: none; }
+  91% { text-shadow: -3px 0 #F2B544, 3px 0 #C9D6D8; transform: translateX(2px) skewX(-6deg); }
+  93% { text-shadow: 3px 0 #F2B544, -3px 0 #C9D6D8; transform: translateX(-2px); }
+  95% { text-shadow: -1px 0 #F2B544, 1px 0 #C9D6D8; transform: skewX(3deg); }
+  97% { text-shadow: 0 0 18px rgba(62, 230, 200, 0.35); transform: none; }
+}
+.glitch { display: inline-block; }
+
+.scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(62, 230, 200, 0.25); border-radius: 999px; }
+
+input[type='date']::-webkit-calendar-picker-indicator { filter: invert(0.8) sepia(1) hue-rotate(140deg) saturate(4); cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-drift, .animate-drift-slow, .animate-gridmove, .animate-scan, .animate-flow, .animate-flow-slow, .glitch { animation: none !important; }
+}

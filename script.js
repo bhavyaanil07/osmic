@@ -44,7 +44,7 @@
       // "Member portal" opens the portal's login page; "Apply or log in" opens the application form.
       // On your own computer (localhost or a double-clicked file) use the portal running there (npm run dev).
       const local = location.protocol === "file:" || ["localhost", "127.0.0.1"].includes(location.hostname);
-      const base = local ? "http://localhost:5173/" : club.portalUrl.replace(/#.*$/, "");
+      const base = local ? "http://localhost:5173/" : new URL(club.portalUrl.replace(/#.*$/, ""), location.href).href;
       a.href = a.id === "joinPortal" ? base + "#/apply" : base + "#/login";
     } else if (a.id === "joinPortal") {
       a.textContent = "Portal opens soon";

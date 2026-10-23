@@ -11,6 +11,7 @@ osmic-site/
   script.js     animation code (don't need to edit)
   content.js    ALL the text, projects, members, events  <- edit this
   images/       your logo, photos, project pictures
+  portal/       the member portal (React app, see portal/README.md)
 ```
 
 ## See it on your Mac
@@ -36,9 +37,30 @@ If the page shows "content.js has a mistake", a comma or quote is missing near t
 
 ## Put it online free (GitHub Pages)
 
-1. github.com > **+** > **New repository** > name it `osmic` > **Public** > **Create repository**.
-2. Click **uploading an existing file**, drag in everything inside `osmic-site`, click **Commit changes**.
-3. In the repository: **Settings > Pages**. Under "Branch", choose **main** and **/(root)**, click **Save**.
-4. Wait 1-2 minutes. Your site is at **https://YOUR-GITHUB-NAME.github.io/osmic/**
+The website and the member portal are published together:
 
-To update later: open `content.js` on GitHub, click the pencil, edit, **Commit changes**.
+- Website: **https://bhavyaanil07.github.io/osmic/**
+- Member portal: **https://bhavyaanil07.github.io/osmic/portal/**
+
+One-time setup: in this repository, **Settings > Pages > Source**, choose **GitHub Actions**.
+After that, every change pushed to `main` (website or portal) goes live in 1 to 2 minutes.
+You can follow each release in the **Actions** tab.
+
+To update the text later: open `content.js` on GitHub, click the pencil, edit, **Commit changes**.
+
+## Run it on your computer
+
+Use two windows and keep both open:
+
+```
+cd osmic/portal
+npm install
+npm run dev
+```
+
+```
+cd osmic
+npx http-server . -p 8000 -c-1 -a 127.0.0.1
+```
+
+Open http://localhost:8000. On your computer, the Member portal button opens the portal running at localhost:5173.
