@@ -41,9 +41,9 @@
   /* ---------- Portal and email buttons ---------- */
   document.querySelectorAll(".portal-link").forEach((a) => {
     if (club.portalUrl) {
-      a.href = club.portalUrl;
-      a.target = "_blank";
-      a.rel = "noopener";
+      // "Member portal" opens the portal's login page; "Apply or log in" opens the application form.
+      const base = club.portalUrl.replace(/#.*$/, "");
+      a.href = a.id === "joinPortal" ? base + "#/apply" : base + "#/login";
     } else if (a.id === "joinPortal") {
       a.textContent = "Portal opens soon";
       a.classList.add("is-disabled");
