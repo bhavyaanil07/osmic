@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OSMIC</title>
+  <meta name="description" content="OSMIC, a student technical club at Amrita Vishwa Vidyapeetham, Amritapuri.">
+  <link rel="icon" href="images/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <header class="nav" id="nav">
+    <a class="brand" href="#top">
+      <img class="brand-logo" src="images/logo.png" alt="" onerror="this.remove()">
+      <span class="brand-name" data-text="club.name"></span>
+    </a>
+    <nav class="nav-links" id="navLinks" aria-label="Main">
+      <a href="#about">About</a>
+      <a href="#projects">Projects</a>
+      <a href="#team">Team</a>
+      <a href="#events">Events</a>
+      <a href="#join">Join</a>
+    </nav>
+    <a class="btn btn-small portal-link" href="#join">Member portal</a>
+    <button class="menu-toggle" id="menuToggle" aria-label="Open menu" aria-expanded="false" aria-controls="navLinks">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <main>
+    <!-- Opening screen -->
+    <section class="hero" id="top">
+      <div class="hero-photo" id="heroPhoto"></div>
+      <canvas class="hero-canvas" id="ripples" aria-hidden="true"></canvas>
+      <div class="hero-shade"></div>
+      <div class="hero-inner">
+        <p class="hero-place" data-text="club.institution"></p>
+        <h1 class="hero-word" id="heroWord"></h1>
+        <div class="waterline" aria-hidden="true"></div>
+        <p class="hero-full" data-text="club.fullName"></p>
+        <p class="hero-tagline"><span id="typed"></span><span class="caret" aria-hidden="true"></span></p>
+        <div class="hero-actions">
+          <a class="btn" href="#projects">See our projects</a>
+          <a class="btn btn-ghost" href="#join">Join OSMIC</a>
+        </div>
+      </div>
+      <a class="scroll-cue" href="#about" aria-label="Scroll to About"><span></span></a>
+    </section>
+
+    <!-- Moving strip -->
+    <div class="marquee" aria-hidden="true"><div class="marquee-track" id="marquee"></div></div>
+
+    <!-- About -->
+    <section class="section about" id="about">
+      <div class="wrap">
+        <div class="about-top">
+          <h2 class="statement reveal" data-text="story.headline"></h2>
+          <div class="about-text reveal" id="aboutText"></div>
+        </div>
+        <div class="stats reveal" id="stats"></div>
+        <div class="vm">
+          <div class="vm-item reveal"><h3>Our vision</h3><p data-text="story.vision"></p></div>
+          <div class="vm-item reveal"><h3>Our mission</h3><div class="vm-text" id="missionText"></div></div>
+        </div>
+        <h3 class="sub-heading reveal">What makes OSMIC different?</h3>
+        <div class="different" id="different"></div>
+        <div class="beginning">
+          <h3 class="sub-heading reveal">The beginning of OSMIC</h3>
+          <div class="beginning-text reveal" id="beginningText"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Projects -->
+    <section class="section projects" id="projects">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <h2>Projects</h2>
+          <p data-text="projectsIntro"></p>
+        </div>
+        <div class="filters reveal" id="filters" role="group" aria-label="Filter projects"></div>
+        <div class="project-list" id="projectList"></div>
+      </div>
+    </section>
+
+    <!-- Team -->
+    <section class="section team" id="team">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <h2>The team</h2>
+          <p>The people who run OSMIC and build its projects.</p>
+        </div>
+        <div class="chancellor reveal" id="chancellor" hidden></div>
+        <div class="thanks" id="thanks" hidden></div>
+        <div id="teamGroups"></div>
+      </div>
+    </section>
+
+    <!-- Events -->
+    <section class="section events" id="events">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <h2>Events</h2>
+          <div class="tabs" role="tablist" aria-label="Events">
+            <button role="tab" class="tab is-active" data-tab="upcoming" aria-selected="true">Upcoming</button>
+            <button role="tab" class="tab" data-tab="past" aria-selected="false">Past</button>
+          </div>
+        </div>
+        <ul class="event-list" id="eventList"></ul>
+      </div>
+    </section>
+
+    <!-- Join -->
+    <section class="join" id="join">
+      <div class="join-photo" id="joinPhoto"></div>
+      <div class="join-shade"></div>
+      <div class="wrap join-inner reveal">
+        <h2>Build something with us.</h2>
+        <p>Apply through the member portal. Once your application is approved, your login details arrive by email.</p>
+        <div class="hero-actions">
+          <a class="btn portal-link" id="joinPortal" href="#join">Apply or log in</a>
+          <a class="btn btn-ghost" id="joinEmail" href="#">Email us</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <div>
+        <strong data-text="club.name"></strong>
+        <p data-text="club.institution"></p>
+      </div>
+      <div class="socials" id="socials"></div>
+      <p class="copy" id="copy"></p>
+    </div>
+  </footer>
+
+  <script src="content.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
