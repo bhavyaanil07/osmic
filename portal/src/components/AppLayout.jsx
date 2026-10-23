@@ -4,7 +4,7 @@ import { NavLink, Navigate, useLocation, useNavigate, useOutlet } from 'react-ro
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Bell, CalendarCheck, CalendarOff, ClipboardList, LayoutDashboard, LogOut, Megaphone, Menu,
-  Network, TrendingUp, UserPlus, Users, X,
+  Network, ShieldCheck, TrendingUp, UserPlus, Users, X,
 } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { currentSession, homePath, inScope, taskStatus, unassigned } from '../lib/selectors';
@@ -30,6 +30,7 @@ function useNav() {
       { to: '/admin/tasks', label: 'Tasks', icon: ClipboardList, count: pendingSubs },
       { to: '/admin/leaves', label: 'Leave requests', icon: CalendarOff, count: pendingLeaves },
       { to: '/admin/announcements', label: 'Announcements', icon: Megaphone },
+      { to: '/admin/security', label: 'Security', icon: ShieldCheck },
     ];
   }
   if (viewer.role === 'lead') {

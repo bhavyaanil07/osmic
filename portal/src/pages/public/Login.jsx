@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Eye, EyeOff, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Eye, EyeOff, FingerprintPattern, RotateCcw, ScanFace } from 'lucide-react';
 import { useStore } from '../../lib/store';
 import { homePath } from '../../lib/selectors';
 import { DEMO_PASSWORD } from '../../lib/demoData';
+import { passkeySupported, signInWithPasskey } from '../../lib/passkey';
 import { Button, Field, ease } from '../../components/ui';
 import { Logo } from '../../components/Logo';
 import { useToast } from '../../components/Toasts';
@@ -66,7 +67,7 @@ function FlowLines() {
 }
 
 export default function Login() {
-  const { actions } = useStore();
+  const { state, actions } = useStore();
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
@@ -75,6 +76,27 @@ export default function Login() {
   const [show, setShow] = useState(false);
   const [error, setError] = useState('');
   const [shake, setShake] = useState(0);
+  const [canBio, setCanBio] = useState(false);
+  const [scanning, setScanning] = useState(false);
+
+  useEffect(() => { passkeySupported().then(setCanBio); }, []);
+
+  // Admin sign-in with Face ID / fingerprint / Windows Hello.
+  const bioLogin = async () => {
+    setError('');
+    const ids = state.users.filter((u) => u.role === 'admin').flatMap((u) => (u.passkeys || []).map((k) => k.id));
+    if (!ids.length) {
+      setError('Face ID / fingerprint is not set up on this device yet. Log in with your password once, then open Security to set it up.');
+      return;
+    }
+    setScanning(true);
+    const r = await signInWithPasskey(ids);
+    setScanning(false);
+    if (r.error) { setError(r.error); return; }
+    const res = actions.loginWithPasskey(r.id);
+    if (res.error) { setError(res.error); return; }
+    go(res.user);
+  };
 
   const go = (user) => navigate(location.state?.from && location.state.from.startsWith(homePath(user.role)) ? location.state.from : homePath(user.role));
 
@@ -168,6 +190,22 @@ export default function Login() {
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden="true" />
             </Button>
           </motion.form>
+
+          {canBio && (
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="mt-4 flex flex-col gap-4">
+              <div className="flex items-center gap-3 text-xs text-slate-500" aria-hidden="true">
+                <span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" />
+              </div>
+              <Button variant="secondary" size="lg" className="w-full" onClick={bioLogin} disabled={scanning} aria-busy={scanning}>
+                <span className="relative flex h-5 w-5 items-center justify-center">
+                  {scanning && <motion.span className="absolute inset-[-6px] rounded-full border-2 border-brand-600" animate={{ scale: [0.8, 1.4], opacity: [0.9, 0] }} transition={{ duration: 1.1, repeat: Infinity }} />}
+                  <FingerprintPattern className="h-5 w-5 text-brand-600" aria-hidden="true" />
+                </span>
+                {scanning ? 'Waiting for your scan…' : 'Admin: sign in with Face ID or fingerprint'}
+                <ScanFace className="h-5 w-5 text-brand-600" aria-hidden="true" />
+              </Button>
+            </motion.div>
+          )}
 
           <p className="mt-6 text-center text-sm text-slate-600">
             Not a member yet?{' '}

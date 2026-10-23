@@ -11,6 +11,7 @@ import Applications from './pages/admin/Applications';
 import Members from './pages/admin/Members';
 import Teams from './pages/admin/Teams';
 import Attendance from './pages/admin/Attendance';
+import Security from './pages/admin/Security';
 
 import LeadDashboard from './pages/lead/Dashboard';
 import MyTeam from './pages/lead/MyTeam';
@@ -46,6 +47,7 @@ export default function App() {
         <Route path="tasks" element={<TasksPage />} />
         <Route path="leaves" element={<LeavesPage />} />
         <Route path="announcements" element={<AnnouncementsPage />} />
+        <Route path="security" element={<Security />} />
       </Route>
 
       <Route path="/lead" element={<AppLayout role="lead" />}>

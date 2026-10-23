@@ -70,11 +70,39 @@ export function StoreProvider({ children }) {
           return { user: getUser(st, userId) };
         });
       },
+      // Face ID / fingerprint (admin only)
+      addPasskey(userId, key) {
+        return mutate((st) => {
+          const u = getUser(st, userId);
+          if (!u || u.role !== 'admin') return { error: 'Only the admin can use Face ID / fingerprint sign-in.' };
+          u.passkeys = [...(u.passkeys || []), key];
+          return { ok: true };
+        });
+      },
+      removePasskey(userId, keyId) {
+        mutate((st) => {
+          const u = getUser(st, userId);
+          if (u) u.passkeys = (u.passkeys || []).filter((k) => k.id !== keyId);
+        });
+      },
+      loginWithPasskey(keyId) {
+        return mutate((st) => {
+          const u = st.users.find((x) => x.role === 'admin' && x.active && (x.passkeys || []).some((k) => k.id === keyId));
+          if (!u) return { error: 'This Face ID / fingerprint is not linked to an admin account.' };
+          u.passkeys = u.passkeys.map((k) => (k.id === keyId ? { ...k, lastUsedAt: new Date().toISOString() } : k));
+          st.session = { userId: u.id };
+          return { user: u };
+        });
+      },
       logout() {
         mutate((st) => { st.session = null; });
       },
       resetDemo() {
+        // Keep the admin's Face ID / fingerprint so a reset doesn't lock them out of it.
+        const keys = getUser(ref.current, 'u0')?.passkeys || [];
         const fresh = createSeed();
+        const admin = getUser(fresh, 'u0');
+        if (admin) admin.passkeys = keys;
         ref.current = fresh;
         setState(fresh);
       },
