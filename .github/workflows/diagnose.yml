@@ -42,7 +42,7 @@ jobs:
               -H 'Content-Type: application/json' -H 'Expect:' --data-binary @/tmp/b.json
           }
           echo "::notice::Profiles by role: $(q "select role, active, count(*) from public.profiles group by 1,2" | tr '\n' ' ' | head -c 500)"
-          echo "::notice::Login accounts: $(q "select count(*) as users, count(email_confirmed_at) as confirmed, count(last_sign_in_at) as signed_in from auth.users" | tr '\n' ' ' | head -c 300)"
+          echo "::notice::Login accounts: $(q "select created_at, email_confirmed_at, last_sign_in_at, encrypted_password <> '' as has_password from auth.users order by created_at limit 5" | tr '\n' ' ' | head -c 300)"
           echo "::notice::Recent emails: $(q "select kind, sent_at is not null as sent, attempts, left(last_error, 200) as error, created_at from public.outbox order by created_at desc limit 6" | tr '\n' ' ' | head -c 1500)"
 
       - name: Server function errors (last 24 hours)
@@ -50,13 +50,13 @@ jobs:
           TOKEN=$(printf '%s' "$SUPABASE_ACCESS_TOKEN" | tr -d '[:space:]"'"'"); REF=$(printf '%s' "$REF" | tr -d '[:space:]"'"'")
           START=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ); END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           SQL="select timestamp, event_message from function_logs order by timestamp desc limit 15"
-          out=$(curl -sS -G "$API/projects/$REF/analytics/endpoints/logs.all" -H "Authorization: Bearer $TOKEN" \
+          out=$(curl -sS -G "$API/projects/$REF/analytics/endpoints/logs" -H "Authorization: Bearer $TOKEN" \
             --data-urlencode "sql=$SQL" --data-urlencode "iso_timestamp_start=$START" --data-urlencode "iso_timestamp_end=$END")
           # hide anything that looks like an email address
           clean=$(echo "$out" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email>/g' | tr '\n' ' ')
           echo "::notice::Function logs: ${clean:0:3000}"
           SQL2="select timestamp, event_message from function_edge_logs order by timestamp desc limit 10"
-          out2=$(curl -sS -G "$API/projects/$REF/analytics/endpoints/logs.all" -H "Authorization: Bearer $TOKEN" \
+          out2=$(curl -sS -G "$API/projects/$REF/analytics/endpoints/logs" -H "Authorization: Bearer $TOKEN" \
             --data-urlencode "sql=$SQL2" --data-urlencode "iso_timestamp_start=$START" --data-urlencode "iso_timestamp_end=$END")
           clean2=$(echo "$out2" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email>/g' | tr '\n' ' ')
           echo "::notice::Function calls: ${clean2:0:2500}"
