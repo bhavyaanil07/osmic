@@ -46,6 +46,18 @@ jobs:
             echo "::error::Missing repository secrets:$missing (REF = SUPABASE_PROJECT_REF). See SETUP.md."
             exit 1
           fi
+          # Remove stray spaces, line breaks or quotes picked up when pasting.
+          tok=$(printf '%s' "$SUPABASE_ACCESS_TOKEN" | tr -d '[:space:]"'"'")
+          ref=$(printf '%s' "$REF" | tr -d '[:space:]"'"'")
+          echo "::add-mask::$tok"
+          echo "Token starts with ${tok:0:4}, length ${#tok} (a valid one is sbp_ + 40 characters = 44)"
+          echo "Project ref length ${#ref} (should be 20)"
+          if ! printf '%s' "$tok" | grep -Eq '^sbp_[A-Za-z0-9_]{40,}$'; then
+            echo "::error::SUPABASE_ACCESS_TOKEN does not look like an access token: it starts with '${tok:0:4}' and is ${#tok} characters long. It must start with sbp_ and be 44 characters. Create one at supabase.com/dashboard/account/tokens."
+            exit 1
+          fi
+          echo "SUPABASE_ACCESS_TOKEN=$tok" >> "$GITHUB_ENV"
+          echo "REF=$ref" >> "$GITHUB_ENV"
 
       - name: Create or update the database
         run: |
