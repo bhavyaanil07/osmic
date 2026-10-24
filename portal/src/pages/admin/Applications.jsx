@@ -18,14 +18,20 @@ export default function Applications() {
   const count = (s) => state.applications.filter((a) => a.status === s).length;
 
   const [busy, setBusy] = useState(null);
+  // Special choices in the dropdown (not saved until Approve): make them a club lead, or no lead yet.
+  const [special, setSpecial] = useState({});
+  const choiceOf = (a) => special[a.id] || a.leadId || '';
   const approve = async (a) => {
-    if (!a.leadId) return toast(`Choose a club lead for ${a.name} before approving.`, 'error');
+    const choice = choiceOf(a);
+    if (!choice) return toast(`Choose a club lead for ${a.name} (or "Make them a club lead") before approving.`, 'error');
+    const joinAs = choice === 'LEAD' ? 'lead' : choice === 'NONE' ? 'unassigned' : 'member';
     setBusy(a.id);
-    const r = await actions.approveApplication(a.id);
+    const r = await actions.approveApplication(a.id, joinAs);
     setBusy(null);
     if (r.error) return toast(r.error, 'error');
     if (r.emailed === false) return toast(`${r.name} approved, but the welcome email failed. Ask them to use "Forgot password?" to get a link.`, 'error');
-    toast(`${r.name} approved and added to ${r.lead}'s team. Welcome email sent.`, 'email');
+    const where = joinAs === 'lead' ? 'as a new club lead' : joinAs === 'unassigned' ? 'without a club lead for now' : `and added to ${r.lead}'s team`;
+    toast(`${r.name} approved ${where}. Welcome email sent.`, 'email');
     return undefined;
   };
   const reject = async (a) => {
@@ -36,14 +42,22 @@ export default function Applications() {
     toast(`${a.name}'s application was rejected. A polite email is on its way.`, 'email');
     return undefined;
   };
-  const chooseLead = async (a, leadId) => {
-    const r = await actions.setApplicationLead(a.id, leadId);
+  const chooseLead = async (a, value) => {
+    if (value === 'LEAD' || value === 'NONE') { setSpecial((s) => ({ ...s, [a.id]: value })); return; }
+    setSpecial((s) => ({ ...s, [a.id]: undefined }));
+    const r = await actions.setApplicationLead(a.id, value);
     if (r.error) toast(r.error, 'error');
+  };
+  const approvedAs = (a) => {
+    const u = getUser(state, a.userId);
+    if (u?.role === 'lead') return 'Joined as a club lead';
+    if (a.leadId) return `Club lead: ${getUser(state, a.leadId)?.name ?? '—'}`;
+    return 'No club lead yet';
   };
 
   return (
     <>
-      <PageHeader title="Applications" sub="Only the admin decides who joins. Pick a club lead for each person, then approve." />
+      <PageHeader title="Applications" sub="Only the admin decides who joins. Choose how each person joins: as a club lead, or as a member in a lead's team. Then approve." />
       <div className="mb-5">
         <Tabs id="apps" value={tab} onChange={setTab} tabs={[
           { value: 'pending', label: 'Pending', count: count('pending') },
@@ -67,15 +81,21 @@ export default function Applications() {
                 <span className="font-mono text-[13px] text-slate-700">{a.roll}</span>
                 <span className="text-[13px] text-slate-500">{a.email}</span>
                 <span className="text-[13px] text-slate-500">Mobile {a.mobile} · WhatsApp {a.whatsapp} · applied {timeAgo(a.appliedAt)}</span>
-                {a.status === 'approved' && <span className="text-[13px] font-semibold text-emerald-700">Club lead: {getUser(state, a.leadId)?.name}</span>}
+                {a.status === 'approved' && <span className="text-[13px] font-semibold text-emerald-700">{approvedAs(a)}</span>}
               </div>
               {a.status === 'pending' && (
                 <div className="flex flex-wrap items-end gap-2">
                   <label className="label text-xs">
-                    Assign club lead
-                    <select className="input min-h-[40px] py-2" value={a.leadId} onChange={(e) => chooseLead(a, e.target.value)}>
-                      <option value="">Choose a lead</option>
-                      {leads.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    Join as
+                    <select className="input min-h-[40px] py-2" value={choiceOf(a)} onChange={(e) => chooseLead(a, e.target.value)}>
+                      <option value="">Choose…</option>
+                      <option value="LEAD">★ Make them a club lead</option>
+                      {leads.length > 0 && (
+                        <optgroup label="Member in this lead's team">
+                          {leads.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                        </optgroup>
+                      )}
+                      <option value="NONE">Member, no lead yet</option>
                     </select>
                   </label>
                   <Button variant="success" icon={Check} onClick={() => approve(a)} disabled={busy === a.id}>{busy === a.id ? 'Working…' : 'Approve'}</Button>

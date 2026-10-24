@@ -49,12 +49,14 @@ ${body}${btn}${foot}
   return { html, text };
 }
 
-export function welcomeMail(name: string, link: string, isAdmin = false): Mail {
+export function welcomeMail(name: string, link: string, isAdmin = false, asLead = false): Mail {
   const { html, text } = layout(
     isAdmin ? 'Set up your OSMIC admin account' : `Welcome to OSMIC, ${name.split(' ')[0]}!`,
     isAdmin
       ? ['This link sets the password for the OSMIC portal admin account.']
-      : ['Your application was approved. Set your password to open the member portal.', 'Your username is this email address.'],
+      : asLead
+        ? ['Your application was approved, and you have been made an <b>OSMIC club lead</b>. You will review tasks and leave requests for your team.', 'Set your password to open the portal. Your username is this email address.']
+        : ['Your application was approved. Set your password to open the member portal.', 'Your username is this email address.'],
     { label: 'Set your password', url: link },
     'This link works once and expires after 24 hours. If it has expired, use "Forgot password?" on the login page.',
   );

@@ -22,7 +22,7 @@ const mapUser = (r, photos) => ({
 });
 const mapApp = (r, photos) => ({
   id: r.id, name: r.name, roll: r.roll, email: r.email, mobile: r.mobile, whatsapp: r.whatsapp,
-  photo: r.photo_path ? photos[r.photo_path] || null : null, status: r.status, leadId: r.lead_id || '', appliedAt: r.applied_at,
+  photo: r.photo_path ? photos[r.photo_path] || null : null, status: r.status, leadId: r.lead_id || '', userId: r.user_id || null, appliedAt: r.applied_at,
 });
 const mapSession = (r) => ({ id: r.id, title: r.title, startedAt: r.started_at, expiresAt: r.expires_at, closedAt: r.closed_at, code: '' });
 const mapAttendance = (r) => ({ id: r.id, sessionId: r.session_id, userId: r.user_id, status: r.status, markedAt: r.marked_at });
@@ -229,7 +229,7 @@ export function StoreProvider({ children }) {
         }
       },
       setApplicationLead: (appId, leadId) => run(async () => check(await supabase.from('applications').update({ lead_id: leadId || null }).eq('id', appId))),
-      approveApplication: (appId) => run(async () => callFunction('approve-application', { applicationId: appId })),
+      approveApplication: (appId, joinAs = 'member') => run(async () => callFunction('approve-application', { applicationId: appId, joinAs })),
       rejectApplication: (appId) => run(async () => {
         check(await supabase.from('applications').update({ status: 'rejected' }).eq('id', appId));
         return { name: data.applications.find((a) => a.id === appId)?.name };
