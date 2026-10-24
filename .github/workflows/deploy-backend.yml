@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['supabase/**']
+    paths: ['supabase/**', '.github/workflows/deploy-backend.yml']
 
 permissions:
   contents: read
@@ -53,7 +53,11 @@ jobs:
             jq -Rs '{query: .}' "$1" > /tmp/body.json
             code=$(curl -sS -o /tmp/out.json -w '%{http_code}' -X POST "$API/projects/$REF/database/query" \
               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data @/tmp/body.json)
-            if [ "$code" -ge 300 ]; then echo "::error::$1 failed ($code)"; cat /tmp/out.json; exit 1; fi
+            if [ "$code" -ge 300 ]; then
+              msg=$(jq -r '.message // .error // tostring' /tmp/out.json 2>/dev/null || cat /tmp/out.json)
+              echo "::error::$1 failed ($code): $(echo "$msg" | tr '\n' ' ' | head -c 1500)"
+              exit 1
+            fi
             echo "$1 OK"
           }
           run_sql supabase/schema.sql
