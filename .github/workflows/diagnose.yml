@@ -1,0 +1,62 @@
+# Health check for the portal backend. Run it from the Actions tab when something isn't working.
+# It prints only counts and error messages (no emails, passwords or keys), because the repo is public.
+name: Check backend
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      GMAIL_USER: ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      API: https://api.supabase.com/v1
+    steps:
+      - name: Gmail login
+        run: |
+          python3 - <<'EOF'
+          import os, smtplib, re
+          user = re.sub(r'\s+', '', os.environ.get('GMAIL_USER', ''))
+          pw = re.sub(r'\s+', '', os.environ.get('GMAIL_APP_PASSWORD', ''))
+          print(f"::notice::Gmail user looks like an email: {'@' in user}; app password length {len(pw)} (should be 16)")
+          try:
+              with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=20) as s:
+                  s.login(user, pw)
+              print("::notice::Gmail login OK")
+          except Exception as e:
+              print(f"::error::Gmail login FAILED: {str(e)[:300]}")
+          EOF
+
+      - name: Database state
+        run: |
+          TOKEN=$(printf '%s' "$SUPABASE_ACCESS_TOKEN" | tr -d '[:space:]"'"'"); REF=$(printf '%s' "$REF" | tr -d '[:space:]"'"'")
+          q() {
+            jq -n --arg q "$1" '{query: $q}' > /tmp/b.json
+            curl -sS -X POST "$API/projects/$REF/database/query" -H "Authorization: Bearer $TOKEN" \
+              -H 'Content-Type: application/json' -H 'Expect:' --data-binary @/tmp/b.json
+          }
+          echo "::notice::Profiles by role: $(q "select role, active, count(*) from public.profiles group by 1,2" | tr '\n' ' ' | head -c 500)"
+          echo "::notice::Login accounts: $(q "select count(*) as users, count(email_confirmed_at) as confirmed, count(last_sign_in_at) as signed_in from auth.users" | tr '\n' ' ' | head -c 300)"
+          echo "::notice::Recent emails: $(q "select kind, sent_at is not null as sent, attempts, left(last_error, 200) as error, created_at from public.outbox order by created_at desc limit 6" | tr '\n' ' ' | head -c 1500)"
+
+      - name: Server function errors (last 24 hours)
+        run: |
+          TOKEN=$(printf '%s' "$SUPABASE_ACCESS_TOKEN" | tr -d '[:space:]"'"'"); REF=$(printf '%s' "$REF" | tr -d '[:space:]"'"'")
+          START=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ); END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          SQL="select timestamp, event_message from function_logs order by timestamp desc limit 15"
+          out=$(curl -sS -G "$API/projects/$REF/analytics/endpoints/logs.all" -H "Authorization: Bearer $TOKEN" \
+            --data-urlencode "sql=$SQL" --data-urlencode "iso_timestamp_start=$START" --data-urlencode "iso_timestamp_end=$END")
+          # hide anything that looks like an email address
+          clean=$(echo "$out" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email>/g' | tr '\n' ' ')
+          echo "::notice::Function logs: ${clean:0:3000}"
+          SQL2="select timestamp, event_message from function_edge_logs order by timestamp desc limit 10"
+          out2=$(curl -sS -G "$API/projects/$REF/analytics/endpoints/logs.all" -H "Authorization: Bearer $TOKEN" \
+            --data-urlencode "sql=$SQL2" --data-urlencode "iso_timestamp_start=$START" --data-urlencode "iso_timestamp_end=$END")
+          clean2=$(echo "$out2" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email>/g' | tr '\n' ' ')
+          echo "::notice::Function calls: ${clean2:0:2500}"
