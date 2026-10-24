@@ -11,7 +11,7 @@ window.OSMIC = {
 
   club: {
     name: "OSMIC",
-    fullName: "Write the full form of OSMIC here",
+    fullName: "",              // full form of OSMIC; leave "" to hide this line
     tagline: "From Ideas to Impact.",
     intro: "OSMIC is a student-driven innovation club born from the desire to create something meaningful for Amma’s birthday. Rooted in sustainability, engineering, and social responsibility, we bring ideas to life through practical, multidisciplinary projects that address real-world challenges.",
     founded: "2026",
