@@ -50,15 +50,13 @@ jobs:
       - name: Create or update the database
         run: |
           run_sql() {
-            jq -Rs '{query: .}' "$1" > /tmp/body.json
-            code=$(curl -sS -o /tmp/out.json -w '%{http_code}' -X POST "$API/projects/$REF/database/query" \
-              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data @/tmp/body.json)
-            if [ "$code" -ge 300 ]; then
-              msg=$(jq -r '.message // .error // tostring' /tmp/out.json 2>/dev/null || cat /tmp/out.json)
-              echo "::error::$1 failed ($code): $(echo "$msg" | tr '\n' ' ' | head -c 1500)"
+            if npx --yes supabase@2.120.0 db query --linked --project-ref "$REF" -f "$1" > /tmp/out.txt 2>&1; then
+              echo "$1 OK"
+            else
+              cat /tmp/out.txt
+              echo "::error::$1 failed: $(tail -c 1500 /tmp/out.txt | tr '\n' ' ')"
               exit 1
             fi
-            echo "$1 OK"
           }
           run_sql supabase/schema.sql
           sed "s#__FUNCTIONS_URL__#https://$REF.supabase.co/functions/v1#" supabase/cron.sql > /tmp/cron.sql
