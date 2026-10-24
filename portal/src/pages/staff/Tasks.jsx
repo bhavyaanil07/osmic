@@ -9,6 +9,8 @@ import { Avatar, Badge, Button, Card, EmptyState, Field, Modal, ProgressBar, Sec
 import { useToast } from '../../components/Toasts';
 
 function WorkLink({ sub }) {
+  const { actions } = useStore();
+  const toast = useToast();
   if (sub.link) {
     return (
       <a href={sub.link} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1.5 truncate font-mono text-[13px] text-brand-600 hover:text-brand-700">
@@ -17,9 +19,10 @@ function WorkLink({ sub }) {
     );
   }
   return (
-    <span className="inline-flex max-w-full items-center gap-1.5 truncate font-mono text-[13px] text-slate-700">
+    <button type="button" onClick={async () => { const r = await actions.openFile(sub); if (r.error) toast(r.error, 'error'); }}
+      className="inline-flex max-w-full items-center gap-1.5 truncate font-mono text-[13px] text-brand-600 hover:text-brand-700" title="Open the file">
       <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{sub.fileName}</span>
-    </span>
+    </button>
   );
 }
 
@@ -31,19 +34,23 @@ function CreateTask({ scope, isLead }) {
   const [pick, setPick] = useState([]);
   const [open, setOpen] = useState(false);
 
-  const submit = (e) => {
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
     e.preventDefault();
     if (!f.title.trim()) return toast('Give the task a title.', 'error');
     let assignees = scope.map((u) => u.id);
     if (f.to === 'Club leads') assignees = scope.filter((u) => u.role === 'lead').map((u) => u.id);
     if (f.to === 'Selected members') assignees = pick;
     if (!assignees.length) return toast(f.to === 'Selected members' ? 'Tick at least one member.' : 'There is no one to assign this to yet.', 'error');
-    const r = actions.createTask({ title: f.title, description: f.description, deadline: f.deadline, assignees });
+    setBusy(true);
+    const r = await actions.createTask({ title: f.title, description: f.description, deadline: f.deadline, assignees });
+    setBusy(false);
     if (r.error) return toast(r.error, 'error');
     toast(`Task created and emailed to ${r.count} ${r.count === 1 ? 'member' : 'members'}.`, 'email');
     setF({ ...f, title: '', description: '' });
     setPick([]);
     setOpen(false);
+    return undefined;
   };
 
   return (
@@ -101,7 +108,7 @@ function CreateTask({ scope, isLead }) {
               </AnimatePresence>
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button type="submit">Create task</Button>
+                <Button type="submit" disabled={busy}>{busy ? 'Creating…' : 'Create task'}</Button>
               </div>
             </div>
           </motion.form>
@@ -128,8 +135,8 @@ export default function TasksPage() {
     .map((t) => ({ t, ppl: t.assignees.filter((id) => inScope(state, viewer, id) && id !== viewer.id) }))
     .filter(({ ppl }) => !isLead || ppl.length > 0);
 
-  const confirm = () => {
-    const r = actions.reviewSubmission(review.sub.id, review.verdict, comment);
+  const confirm = async () => {
+    const r = await actions.reviewSubmission(review.sub.id, review.verdict, comment);
     if (r.error) toast(r.error, 'error');
     else toast(`Marked ${review.verdict === 'pass' ? 'Pass' : 'Fail'}. ${r.name} was emailed the result.`, 'email');
     setReview(null);
@@ -197,7 +204,7 @@ export default function TasksPage() {
                     <div className="flex gap-2">
                       <Button size="sm" variant="secondary" onClick={() => setOpenTask(isOpen ? null : t.id)} aria-expanded={isOpen}>{isOpen ? 'Hide members' : 'View members'}</Button>
                       {canDelete && (
-                        <Button size="sm" variant="ghost" aria-label={`Delete ${t.title}`} onClick={() => { actions.deleteTask(t.id); toast('Task deleted.'); }}>
+                        <Button size="sm" variant="ghost" aria-label={`Delete ${t.title}`} onClick={async () => { if (!window.confirm(`Delete "${t.title}" and all its submissions?`)) return; const r = await actions.deleteTask(t.id); toast(r.error || 'Task deleted.', r.error ? 'error' : 'success'); }}>
                           <Trash className="h-4 w-4" />
                         </Button>
                       )}

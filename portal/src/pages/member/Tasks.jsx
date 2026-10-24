@@ -24,13 +24,17 @@ function SubmitBox({ task, onDone }) {
     if (f.size > 10 * 1024 * 1024) return toast('Files must be 10 MB or smaller.', 'error');
     setFile(f);
   };
-  const submit = () => {
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
     if (mode === 'file' && !file) return toast('Choose a file first.', 'error');
     if (mode === 'link' && !/^https?:\/\/\S+\.\S+/.test(link.trim())) return toast('Paste a full link starting with https://', 'error');
-    const r = actions.submitWork(task.id, mode === 'file' ? { fileName: file.name, note } : { link: link.trim(), note });
+    setBusy(true);
+    const r = await actions.submitWork(task.id, mode === 'file' ? { file, note } : { link: link.trim(), note });
+    setBusy(false);
     if (r.error) return toast(r.error, 'error');
     toast('Submitted. Your club lead will review it.');
     onDone?.();
+    return undefined;
   };
 
   return (
@@ -69,13 +73,13 @@ function SubmitBox({ task, onDone }) {
         )}
       </AnimatePresence>
       <Field label="Note for the reviewer (optional)"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything they should know" /></Field>
-      <Button className="self-start" icon={Upload} onClick={submit}>Submit work</Button>
+      <Button className="self-start" icon={Upload} onClick={submit} disabled={busy}>{busy ? 'Uploading…' : 'Submit work'}</Button>
     </div>
   );
 }
 
 function TaskCard({ task, index }) {
-  const { state, viewer } = useStore();
+  const { state, viewer, actions } = useStore();
   const status = taskStatus(state, task, viewer.id);
   const sub = latestSubmission(state, task.id, viewer.id);
   const [resubmit, setResubmit] = useState(false);
@@ -105,7 +109,7 @@ function TaskCard({ task, index }) {
             {sub.link ? (
               <a href={sub.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 truncate font-mono text-[13px] text-brand-600"><ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />{sub.link.replace(/^https?:\/\//, '')}</a>
             ) : (
-              <span className="inline-flex items-center gap-1.5 font-mono text-[13px] text-slate-700"><FileText className="h-3.5 w-3.5" aria-hidden="true" />{sub.fileName}</span>
+              <button type="button" onClick={() => actions.openFile(sub)} className="inline-flex items-center gap-1.5 font-mono text-[13px] text-brand-600 hover:text-brand-700"><FileText className="h-3.5 w-3.5" aria-hidden="true" />{sub.fileName}</button>
             )}
             <span className="text-xs text-slate-500">submitted {timeAgo(sub.submittedAt)}</span>
           </div>

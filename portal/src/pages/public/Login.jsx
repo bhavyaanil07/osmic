@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Eye, EyeOff, FingerprintPattern, RotateCcw, ScanFace } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Eye, EyeOff, FingerprintPattern, KeyRound, Mail, ScanFace } from 'lucide-react';
 import { useStore } from '../../lib/store';
 import { homePath } from '../../lib/selectors';
-import { DEMO_PASSWORD } from '../../lib/demoData';
 import { passkeySupported, signInWithPasskey } from '../../lib/passkey';
 import { Button, Field, ease } from '../../components/ui';
 import { Logo } from '../../components/Logo';
@@ -67,51 +66,86 @@ function FlowLines() {
 }
 
 export default function Login() {
-  const { state, actions } = useStore();
+  const { viewer, actions, hasAdmin, setHasAdmin } = useStore();
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
+  const [mode, setMode] = useState('login'); // login | forgot | sent | first | firstSent
   const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
   const [shake, setShake] = useState(0);
   const [canBio, setCanBio] = useState(false);
   const [scanning, setScanning] = useState(false);
 
   useEffect(() => { passkeySupported().then(setCanBio); }, []);
+  useEffect(() => { if (hasAdmin === false) setMode('first'); }, [hasAdmin]);
 
-  // Admin sign-in with Face ID / fingerprint / Windows Hello.
+  const go = (role) => navigate(location.state?.from && location.state.from.startsWith(homePath(role)) ? location.state.from : homePath(role), { replace: true });
+  useEffect(() => { if (viewer) go(viewer.role); }, [viewer]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fail = (msg) => { setError(msg); setShake((x) => x + 1); };
+
+  // Admin sign-in with Face ID / fingerprint / Windows Hello (checked by the server).
   const bioLogin = async () => {
     setError('');
-    const ids = state.users.filter((u) => u.role === 'admin').flatMap((u) => (u.passkeys || []).map((k) => k.id));
-    if (!ids.length) {
-      setError('Face ID / fingerprint is not set up on this device yet. Log in with your password once, then open Security to set it up.');
-      return;
-    }
     setScanning(true);
-    const r = await signInWithPasskey(ids);
+    const r = await signInWithPasskey();
+    if (r.error) { setScanning(false); setError(r.error); return; }
+    const res = await actions.signInWithTokenHash(r.tokenHash);
     setScanning(false);
-    if (r.error) { setError(r.error); return; }
-    const res = actions.loginWithPasskey(r.id);
     if (res.error) { setError(res.error); return; }
-    go(res.user);
+    go('admin');
   };
 
-  const go = (user) => navigate(location.state?.from && location.state.from.startsWith(homePath(user.role)) ? location.state.from : homePath(user.role));
-
-  const onSubmit = (e) => {
+  const onLogin = async (e) => {
     e.preventDefault();
-    const res = actions.login(email, password);
-    if (res.error) { setError(res.error); setShake((s) => s + 1); return; }
-    go(res.user);
+    setBusy(true);
+    const res = await actions.login(email, password);
+    setBusy(false);
+    if (res.error) return fail(res.error);
+    go(res.user.role);
   };
 
-  const demo = [
-    { label: 'Admin', id: 'u0', note: 'Runs the club' },
-    { label: 'Club lead', id: 'u1', note: 'Rahul Nair' },
-    { label: 'Member', id: 'u3', note: 'Ananya Menon' },
-  ];
+  const onForgot = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    const res = await actions.requestPasswordReset(email);
+    setBusy(false);
+    if (res.error) return fail(res.error);
+    setMode('sent');
+  };
+
+  const onFirstAdmin = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    const res = await actions.bootstrapAdmin(email, name);
+    setBusy(false);
+    if (res.error) {
+      if (/already exists/.test(res.error)) { setHasAdmin(true); setMode('login'); toast(res.error); return undefined; }
+      return fail(res.error);
+    }
+    setMode('firstSent');
+  };
+
+  const errorBox = (
+    <AnimatePresence>
+      {error && (
+        <motion.p role="alert" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+          className="rounded-lg bg-red-50 px-3 py-2.5 text-sm font-medium text-red-700">{error}</motion.p>
+      )}
+    </AnimatePresence>
+  );
+  const emailField = (
+    <Field label="Email">
+      <input className="input" type="email" autoComplete="email" required value={email}
+        onChange={(e) => { setEmail(e.target.value); setError(''); }} placeholder="you@example.com" />
+    </Field>
+  );
+  const panel = { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.3, ease } };
 
   return (
     <div className="cyber-bg grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
@@ -155,84 +189,101 @@ export default function Login() {
 
       <div className="flex items-center justify-center px-5 py-12 sm:px-10">
         <motion.div className="w-full max-w-[400px]" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6, ease }}>
-          <h2 className="font-display text-3xl font-semibold">Log in</h2>
-          <p className="mt-1.5 text-slate-500">Use the email you applied with.</p>
+          <AnimatePresence mode="wait">
+            {mode === 'login' && (
+              <motion.div key="login" {...panel}>
+                <h2 className="font-display text-3xl font-semibold">Log in</h2>
+                <p className="mt-1.5 text-slate-500">Use the email you applied with.</p>
+                <motion.form key={shake} onSubmit={onLogin} className="mt-8 flex flex-col gap-4"
+                  animate={shake ? { x: [0, -10, 10, -6, 6, 0] } : {}} transition={{ duration: 0.4 }}>
+                  {emailField}
+                  <Field label="Password">
+                    <div className="relative">
+                      <input className="input pr-12" type={show ? 'text' : 'password'} autoComplete="current-password" required value={password}
+                        onChange={(e) => { setPassword(e.target.value); setError(''); }} placeholder="Your password" />
+                      <button type="button" onClick={() => setShow((x) => !x)} aria-label={show ? 'Hide password' : 'Show password'}
+                        className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800">
+                        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </Field>
+                  <div className="-mt-1 flex justify-end">
+                    <button type="button" onClick={() => { setError(''); setMode('forgot'); }} className="text-[13px] font-medium text-brand-600 hover:text-brand-700">
+                      Forgot password?
+                    </button>
+                  </div>
+                  {errorBox}
+                  <Button type="submit" size="lg" className="group w-full" disabled={busy}>
+                    {busy ? 'Logging in…' : 'Log in'}
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden="true" />
+                  </Button>
+                </motion.form>
 
-          <motion.form key={shake} onSubmit={onSubmit} className="mt-8 flex flex-col gap-4"
-            animate={shake ? { x: [0, -10, 10, -6, 6, 0] } : {}} transition={{ duration: 0.4 }}>
-            <Field label="Email">
-              <input className="input" type="email" autoComplete="email" required value={email}
-                onChange={(e) => { setEmail(e.target.value); setError(''); }} placeholder="you@am.students.amrita.edu" />
-            </Field>
-            <Field label="Password">
-              <div className="relative">
-                <input className="input pr-12" type={show ? 'text' : 'password'} autoComplete="current-password" required value={password}
-                  onChange={(e) => { setPassword(e.target.value); setError(''); }} placeholder="Your password" />
-                <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? 'Hide password' : 'Show password'}
-                  className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800">
-                  {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </Field>
-            <div className="-mt-1 flex justify-end">
-              <button type="button" onClick={() => toast('In the real site this emails you a reset link.', 'email')} className="text-[13px] font-medium text-brand-600 hover:text-brand-700">
-                Forgot password?
-              </button>
-            </div>
-            <AnimatePresence>
-              {error && (
-                <motion.p role="alert" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                  className="rounded-lg bg-red-50 px-3 py-2.5 text-sm font-medium text-red-700">{error}</motion.p>
-              )}
-            </AnimatePresence>
-            <Button type="submit" size="lg" className="group w-full">
-              Log in
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden="true" />
-            </Button>
-          </motion.form>
+                {canBio && (
+                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="mt-4 flex flex-col gap-4">
+                    <div className="flex items-center gap-3 text-xs text-slate-500" aria-hidden="true">
+                      <span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" />
+                    </div>
+                    <Button variant="secondary" size="lg" className="w-full" onClick={bioLogin} disabled={scanning} aria-busy={scanning}>
+                      <span className="relative flex h-5 w-5 items-center justify-center">
+                        {scanning && <motion.span className="absolute inset-[-6px] rounded-full border-2 border-brand-600" animate={{ scale: [0.8, 1.4], opacity: [0.9, 0] }} transition={{ duration: 1.1, repeat: Infinity }} />}
+                        <FingerprintPattern className="h-5 w-5 text-brand-600" aria-hidden="true" />
+                      </span>
+                      {scanning ? 'Waiting for your scan…' : 'Admin: sign in with Face ID or fingerprint'}
+                      <ScanFace className="h-5 w-5 text-brand-600" aria-hidden="true" />
+                    </Button>
+                  </motion.div>
+                )}
 
-          {canBio && (
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="mt-4 flex flex-col gap-4">
-              <div className="flex items-center gap-3 text-xs text-slate-500" aria-hidden="true">
-                <span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" />
-              </div>
-              <Button variant="secondary" size="lg" className="w-full" onClick={bioLogin} disabled={scanning} aria-busy={scanning}>
-                <span className="relative flex h-5 w-5 items-center justify-center">
-                  {scanning && <motion.span className="absolute inset-[-6px] rounded-full border-2 border-brand-600" animate={{ scale: [0.8, 1.4], opacity: [0.9, 0] }} transition={{ duration: 1.1, repeat: Infinity }} />}
-                  <FingerprintPattern className="h-5 w-5 text-brand-600" aria-hidden="true" />
-                </span>
-                {scanning ? 'Waiting for your scan…' : 'Admin: sign in with Face ID or fingerprint'}
-                <ScanFace className="h-5 w-5 text-brand-600" aria-hidden="true" />
-              </Button>
-            </motion.div>
-          )}
+                <p className="mt-6 text-center text-sm text-slate-600">
+                  Not a member yet?{' '}
+                  <Link to="/apply" className="font-semibold text-brand-600 hover:text-brand-700">Apply to join</Link>
+                </p>
+              </motion.div>
+            )}
 
-          <p className="mt-6 text-center text-sm text-slate-600">
-            Not a member yet?{' '}
-            <Link to="/apply" className="font-semibold text-brand-600 hover:text-brand-700">Apply to join</Link>
-          </p>
+            {mode === 'forgot' && (
+              <motion.div key="forgot" {...panel}>
+                <h2 className="font-display text-3xl font-semibold">Forgot password</h2>
+                <p className="mt-1.5 text-slate-500">Enter your email and we&apos;ll send you a link to choose a new password.</p>
+                <motion.form key={shake} onSubmit={onForgot} className="mt-8 flex flex-col gap-4" animate={shake ? { x: [0, -10, 10, -6, 6, 0] } : {}}>
+                  {emailField}
+                  {errorBox}
+                  <Button type="submit" size="lg" className="w-full" disabled={busy}>{busy ? 'Sending…' : 'Send reset link'}</Button>
+                  <button type="button" onClick={() => setMode('login')} className="text-sm font-medium text-slate-600 hover:text-slate-900">Back to log in</button>
+                </motion.form>
+              </motion.div>
+            )}
 
-          <div className="mt-8 rounded-2xl border border-dashed border-rose-300 bg-panel/60 p-4">
-            <p className="font-mono text-[11px] font-semibold tracking-[0.12em] text-slate-500">DEMO · VIEW THE PORTAL AS</p>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {demo.map((d, i) => (
-                <motion.button key={d.id} type="button"
-                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 + i * 0.08 }}
-                  whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
-                  onClick={() => { const r = actions.loginAs(d.id); go(r.user); }}
-                  className="flex min-h-[56px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-panel px-2 py-2 shadow-sm transition-shadow hover:shadow-lift">
-                  <span className="text-sm font-semibold text-slate-900">{d.label}</span>
-                  <span className="text-[11px] text-slate-500">{d.note}</span>
-                </motion.button>
-              ))}
-            </div>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-              <span>Or log in with any demo email and <span className="font-mono font-semibold text-slate-700">{DEMO_PASSWORD}</span></span>
-              <button type="button" onClick={() => { actions.resetDemo(); toast('Demo data reset.'); }} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900">
-                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> Reset demo
-              </button>
-            </div>
-          </div>
+            {(mode === 'sent' || mode === 'firstSent') && (
+              <motion.div key="sent" {...panel} role="status" className="flex flex-col items-start gap-3">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600"><Mail className="h-6 w-6" aria-hidden="true" /></span>
+                <h2 className="font-display text-2xl font-semibold">Check your email</h2>
+                <p className="text-slate-600">
+                  {mode === 'firstSent'
+                    ? <>We sent a link to <b>{email}</b>. Open it to set the admin password. It can take a minute; check Spam too.</>
+                    : <>If <b>{email}</b> belongs to a member, a link to choose a new password is on its way. Check Spam too.</>}
+                </p>
+                <Button variant="secondary" onClick={() => { setMode('login'); if (mode === 'firstSent') setHasAdmin(true); }}>Back to log in</Button>
+              </motion.div>
+            )}
+
+            {mode === 'first' && (
+              <motion.div key="first" {...panel}>
+                <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800"><KeyRound className="h-3.5 w-3.5" aria-hidden="true" /> First-time setup</span>
+                <h2 className="mt-3 font-display text-3xl font-semibold">Set up the admin</h2>
+                <p className="mt-1.5 text-slate-500">The portal has no admin yet. Enter the admin email chosen during setup and we&apos;ll email you a link to set the password.</p>
+                <motion.form key={shake} onSubmit={onFirstAdmin} className="mt-8 flex flex-col gap-4" animate={shake ? { x: [0, -10, 10, -6, 6, 0] } : {}}>
+                  <Field label="Your name">
+                    <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" autoComplete="name" />
+                  </Field>
+                  {emailField}
+                  {errorBox}
+                  <Button type="submit" size="lg" className="w-full" disabled={busy}>{busy ? 'Sending…' : 'Email me the link'}</Button>
+                </motion.form>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       </div>
     </div>

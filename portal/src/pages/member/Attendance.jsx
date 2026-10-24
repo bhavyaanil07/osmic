@@ -63,10 +63,13 @@ export default function MemberAttendance() {
 
   useEffect(() => { setError(''); }, [code]);
 
-  const submit = (e) => {
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
     e.preventDefault();
     if (code.length < 6) { setError('Enter all 6 characters.'); setShake((s) => s + 1); return; }
-    const r = actions.markAttendance(code);
+    setBusy(true);
+    const r = await actions.markAttendance(code);
+    setBusy(false);
     if (r.error) { setError(r.error); setShake((s) => s + 1); }
   };
 
@@ -98,8 +101,7 @@ export default function MemberAttendance() {
                 <AnimatePresence>
                   {error && <motion.p role="alert" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="text-sm font-medium text-red-600">{error}</motion.p>}
                 </AnimatePresence>
-                <Button type="submit" size="lg" className="self-start">Submit code</Button>
-                <p className="text-xs text-slate-500">Demo hint: today&apos;s code is <span className="font-mono font-semibold text-slate-800">{cur.code}</span></p>
+                <Button type="submit" size="lg" className="self-start" disabled={busy}>{busy ? 'Checking…' : 'Submit code'}</Button>
               </motion.form>
             )}
             {mark && cur && (

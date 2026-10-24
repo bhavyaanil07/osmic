@@ -14,10 +14,11 @@ export default function Teams() {
   const leads = leadsOf(state);
   const free = unassigned(state);
 
-  const assign = (u, leadId) => {
+  const assign = async (u, leadId) => {
     if (!leadId) return;
-    const r = actions.setLead(u.id, leadId);
-    toast(`${r.name} joined ${r.lead}'s team.`);
+    const r = await actions.setLead(u.id, leadId);
+    if (r.error) toast(r.error, 'error');
+    else toast(`${r.name} joined ${r.lead}'s team.`);
   };
 
   return (

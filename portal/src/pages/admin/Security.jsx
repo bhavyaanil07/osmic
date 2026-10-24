@@ -4,28 +4,27 @@ import { FingerprintPattern, KeyRound, Laptop, ScanFace, ShieldCheck, Smartphone
 import { useStore } from '../../lib/store';
 import { passkeySupported, registerPasskey } from '../../lib/passkey';
 import { fmtDate, timeAgo } from '../../lib/dates';
-import { DEMO_PASSWORD } from '../../lib/demoData';
 import { PageHeader } from '../../components/AppLayout';
 import { Button, Card, SectionTitle, Stagger, ease } from '../../components/ui';
 import { useToast } from '../../components/Toasts';
 
 export default function Security() {
-  const { viewer, actions } = useStore();
+  const { state, actions } = useStore();
   const toast = useToast();
   const [supported, setSupported] = useState(null);
   const [busy, setBusy] = useState(false);
-  const keys = viewer.passkeys || [];
+  const keys = state.passkeys;
 
   useEffect(() => { passkeySupported().then(setSupported); }, []);
 
   const setUp = async () => {
     setBusy(true);
-    const key = await registerPasskey(viewer, keys.map((k) => k.id));
+    const r = await registerPasskey();
+    if (!r.error) await actions.reload();
     setBusy(false);
-    if (key.error) return toast(key.error, 'error');
-    const r = actions.addPasskey(viewer.id, key);
     if (r.error) return toast(r.error, 'error');
     toast('Face ID / fingerprint is set up. You can use it on the login page now.');
+    return undefined;
   };
 
   return (
@@ -50,7 +49,7 @@ export default function Security() {
               <h2 className="font-display text-lg font-semibold">Face ID / fingerprint sign-in</h2>
               <p className="mt-1 text-sm text-slate-600">
                 Uses this device&apos;s own lock: Windows Hello on Windows laptops, Touch ID on Macs, Face ID or fingerprint on phones.
-                Your face or fingerprint never leaves the device; the portal only gets a yes or no.
+                Your face or fingerprint never leaves the device; the OSMIC server checks a signed answer from it before letting you in.
               </p>
               {supported === false && (
                 <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -81,7 +80,7 @@ export default function Security() {
                         <span className="font-medium">{k.device}</span>
                         <span className="text-xs text-slate-500">Added {fmtDate(k.createdAt)}{k.lastUsedAt ? ` · last used ${timeAgo(k.lastUsedAt)}` : ' · not used yet'}</span>
                       </span>
-                      <Button size="sm" variant="danger" icon={Trash} onClick={() => { actions.removePasskey(viewer.id, k.id); toast('Device removed. It can no longer sign in.'); }}>Remove</Button>
+                      <Button size="sm" variant="danger" icon={Trash} onClick={async () => { const r = await actions.removePasskey(k.id); toast(r.error || 'Device removed. It can no longer sign in.', r.error ? 'error' : 'success'); }}>Remove</Button>
                     </motion.li>
                   );
                 })}
@@ -94,7 +93,7 @@ export default function Security() {
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700"><KeyRound className="h-5 w-5" aria-hidden="true" /></span>
           <div className="min-w-[240px] flex-1">
             <p className="font-semibold">Password</p>
-            <p className="text-sm text-slate-600">Always works, on any device. In this demo the password is <span className="font-mono font-semibold text-slate-800">{DEMO_PASSWORD}</span>; real passwords come with stage 2.</p>
+            <p className="text-sm text-slate-600">Always works, on any device. Forgot it? Use &quot;Forgot password?&quot; on the login page and a reset link is emailed to you.</p>
           </div>
           <span className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700"><ShieldCheck className="h-4 w-4" aria-hidden="true" /> On</span>
         </Card>

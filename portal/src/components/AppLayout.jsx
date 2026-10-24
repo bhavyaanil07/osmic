@@ -10,7 +10,7 @@ import { useStore } from '../lib/store';
 import { currentSession, homePath, inScope, taskStatus, unassigned } from '../lib/selectors';
 import { timeAgo } from '../lib/dates';
 import { Avatar, cx, ease } from './ui';
-import { Logo } from './Logo';
+import { Logo, LogoMark } from './Logo';
 
 function useNav() {
   const { state, viewer } = useStore();
@@ -93,7 +93,7 @@ function Sidebar({ onNavigate }) {
           <p className="text-xs text-slate-400">{ROLE_NAME[viewer.role]}</p>
         </div>
         <button type="button" aria-label="Log out" title="Log out"
-          onClick={() => { actions.logout(); navigate('/login'); }}
+          onClick={async () => { await actions.logout(); navigate('/login'); }}
           className="rounded-lg p-2 text-slate-400 transition hover:bg-white/10 hover:text-white">
           <LogOut className="h-[18px] w-[18px]" />
         </button>
@@ -145,7 +145,7 @@ function Notifications() {
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <p className="font-display font-semibold">Notifications</p>
               {unread > 0 && (
-                <button type="button" onClick={() => actions.markAllRead(viewer.id)} className="text-[13px] font-semibold text-brand-600 hover:text-brand-700">Mark all read</button>
+                <button type="button" onClick={() => actions.markAllRead()} className="text-[13px] font-semibold text-brand-600 hover:text-brand-700">Mark all read</button>
               )}
             </div>
             <ul className="scrollbar-thin max-h-[360px] overflow-y-auto">
@@ -170,14 +170,38 @@ function Notifications() {
   );
 }
 
+export function LoadingScreen({ text = 'Loading OSMIC…' }) {
+  return (
+    <div className="cyber-bg flex min-h-screen flex-col items-center justify-center gap-4" role="status">
+      <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}>
+        <LogoMark size={44} />
+      </motion.div>
+      <p className="text-sm text-slate-500">{text}</p>
+    </div>
+  );
+}
+
 export function AppLayout({ role }) {
-  const { viewer } = useStore();
+  const { viewer, loading, loadError, actions } = useStore();
   const location = useLocation();
   const outlet = useOutlet();
   const [drawer, setDrawer] = useState(false);
 
   useEffect(() => { setDrawer(false); }, [location.pathname]);
 
+  if (loading) return <LoadingScreen />;
+  if (loadError && !viewer) {
+    return (
+      <div className="cyber-bg flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center" role="alert">
+        <p className="font-display text-xl font-semibold">Couldn&apos;t load the portal</p>
+        <p className="max-w-md text-slate-600">{loadError}</p>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => actions.reload()} className="min-h-[44px] rounded-full bg-brand-600 px-5 font-semibold text-ink-900">Try again</button>
+          <button type="button" onClick={() => actions.logout()} className="min-h-[44px] rounded-full border border-slate-900/45 px-5 font-semibold">Log out</button>
+        </div>
+      </div>
+    );
+  }
   if (!viewer) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   if (viewer.role !== role) return <Navigate to={homePath(viewer.role)} replace />;
 

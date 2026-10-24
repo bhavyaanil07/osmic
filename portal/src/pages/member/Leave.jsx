@@ -15,13 +15,14 @@ export default function MemberLeave() {
   const lead = viewer.leadId ? getUser(state, viewer.leadId) : null;
   const mine = state.leaves.filter((l) => l.userId === viewer.id);
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     if (!f.from || !f.reason.trim()) return toast('Pick a start date and write a reason.', 'error');
-    const r = actions.applyLeave(f);
+    const r = await actions.applyLeave(f);
     if (r.error) return toast(r.error, 'error');
     toast('Leave request sent. You will get an email when it is decided.');
     setF({ from: '', to: '', reason: '' });
+    return undefined;
   };
 
   return (

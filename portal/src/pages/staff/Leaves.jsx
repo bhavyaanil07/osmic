@@ -17,10 +17,11 @@ export default function LeavesPage() {
   const mine = state.leaves.filter((l) => inScope(state, viewer, l.userId));
   const list = mine.filter((l) => (tab === 'pending' ? l.status === 'pending' : l.status !== 'pending'));
 
-  const decide = (l, status) => {
-    const r = actions.decideLeave(l.id, status, notes[l.id] || '');
+  const decide = async (l, status) => {
+    const r = await actions.decideLeave(l.id, status, notes[l.id] || '');
     if (r.error) return toast(r.error, 'error');
     toast(`Leave ${status}. ${r.name} was notified by email.`, 'email');
+    return undefined;
   };
 
   return (

@@ -7,13 +7,12 @@ import { Button, Field, ease } from '../../components/ui';
 import { Logo } from '../../components/Logo';
 
 const empty = { name: '', roll: '', email: '', mobile: '', whatsapp: '', photo: null };
-const COLLEGE_DOMAIN = '@am.students.amrita.edu';
 
 function validate(f, same) {
   const e = {};
   if (f.name.trim().length < 3) e.name = 'Enter your full name.';
   if (!/^[A-Za-z0-9.]{6,}$/.test(f.roll.trim())) e.roll = 'Enter your roll number, e.g. AM.EN.U4AID24003.';
-  if (!f.email.trim().toLowerCase().endsWith(COLLEGE_DOMAIN)) e.email = `Use your college email (${COLLEGE_DOMAIN}).`;
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim())) e.email = 'Enter a valid email address.';
   if (!/^[6-9]\d{9}$/.test(f.mobile.replace(/\s/g, ''))) e.mobile = 'Enter a valid 10-digit mobile number.';
   if (!same && !/^[6-9]\d{9}$/.test(f.whatsapp.replace(/\s/g, ''))) e.whatsapp = 'Enter a valid 10-digit WhatsApp number.';
   if (!f.photo) e.photo = 'Add a photo so the admin can recognise you.';
@@ -66,13 +65,16 @@ export default function Apply() {
     reader.readAsDataURL(file);
   };
 
-  const onSubmit = (e) => {
+  const [busy, setBusy] = useState(false);
+  const onSubmit = async (e) => {
     e.preventDefault();
     const errs = validate(f, same);
     setErrors(errs);
     if (Object.keys(errs).length) return;
     const data = { ...f, mobile: f.mobile.replace(/\s/g, ''), whatsapp: (same ? f.mobile : f.whatsapp).replace(/\s/g, '') };
-    const res = actions.submitApplication(data);
+    setBusy(true);
+    const res = await actions.submitApplication(data);
+    setBusy(false);
     if (res.error) { setFormError(res.error); return; }
     setDone(true);
   };
@@ -126,8 +128,8 @@ export default function Apply() {
                 <Field label="Roll number" error={errors.roll}>
                   <input className="input font-mono uppercase" value={f.roll} onChange={set('roll')} placeholder="AM.EN.U4AID24000" />
                 </Field>
-                <Field label="College email" error={errors.email} className="sm:col-span-2">
-                  <input className="input" type="email" value={f.email} onChange={set('email')} placeholder={`you${COLLEGE_DOMAIN}`} autoComplete="email" />
+                <Field label="Email" error={errors.email} className="sm:col-span-2">
+                  <input className="input" type="email" value={f.email} onChange={set('email')} placeholder="you@example.com" autoComplete="email" />
                 </Field>
                 <Field label="Mobile number" error={errors.mobile}>
                   <input className="input" type="tel" inputMode="numeric" value={f.mobile} onChange={set('mobile')} placeholder="10-digit number" autoComplete="tel" />
@@ -148,7 +150,7 @@ export default function Apply() {
               </div>
 
               {formError && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2.5 text-sm font-medium text-red-700">{formError}</p>}
-              <Button type="submit" size="lg">Submit application</Button>
+              <Button type="submit" size="lg" disabled={busy}>{busy ? 'Sending…' : 'Submit application'}</Button>
             </motion.form>
           ) : (
             <motion.div key="done" role="status"

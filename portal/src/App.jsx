@@ -5,6 +5,8 @@ import { AppLayout } from './components/AppLayout';
 
 import Login from './pages/public/Login';
 import Apply from './pages/public/Apply';
+import SetPassword from './pages/public/SetPassword';
+import { LoadingScreen } from './components/AppLayout';
 
 import AdminDashboard from './pages/admin/Dashboard';
 import Applications from './pages/admin/Applications';
@@ -27,7 +29,8 @@ import MemberLeave from './pages/member/Leave';
 import MemberProgress from './pages/member/Progress';
 
 function Home() {
-  const { viewer } = useStore();
+  const { viewer, loading } = useStore();
+  if (loading) return <LoadingScreen />;
   return <Navigate to={viewer ? homePath(viewer.role) : '/login'} replace />;
 }
 
@@ -37,6 +40,7 @@ export default function App() {
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/apply" element={<Apply />} />
+      <Route path="/set-password" element={<SetPassword />} />
 
       <Route path="/admin" element={<AppLayout role="admin" />}>
         <Route index element={<AdminDashboard />} />

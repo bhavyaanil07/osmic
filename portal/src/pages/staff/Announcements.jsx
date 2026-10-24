@@ -13,13 +13,14 @@ export default function AnnouncementsPage() {
   const toast = useToast();
   const [f, setF] = useState({ title: '', message: '', sendEmail: true });
 
-  const post = (e) => {
+  const post = async (e) => {
     e.preventDefault();
     if (!f.title.trim()) return toast('Add a title.', 'error');
-    const r = actions.postAnnouncement(f);
+    const r = await actions.postAnnouncement(f);
     if (r.error) return toast(r.error, 'error');
     toast(f.sendEmail ? 'Posted and emailed to all members.' : 'Posted on every member dashboard.', f.sendEmail ? 'email' : 'success');
     setF({ title: '', message: '', sendEmail: true });
+    return undefined;
   };
 
   return (
@@ -56,7 +57,7 @@ export default function AnnouncementsPage() {
                       <div className="mt-3 flex items-center justify-between gap-2">
                         <span className="text-xs text-slate-500">by {by?.name}{a.emailed && <span className="ml-2 inline-flex items-center gap-1 text-brand-600"><Mail className="h-3 w-3" aria-hidden="true" />emailed</span>}</span>
                         {(viewer.role === 'admin' || a.by === viewer.id) && (
-                          <button type="button" aria-label="Delete announcement" onClick={() => { actions.deleteAnnouncement(a.id); toast('Announcement deleted.'); }}
+                          <button type="button" aria-label="Delete announcement" onClick={async () => { const r = await actions.deleteAnnouncement(a.id); toast(r.error || 'Announcement deleted.', r.error ? 'error' : 'success'); }}
                             className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600"><Trash className="h-4 w-4" /></button>
                         )}
                       </div>

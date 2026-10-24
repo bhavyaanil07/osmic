@@ -1,0 +1,20 @@
+# Local project id (any name); the real project is chosen with --project-ref.
+project_id = "osmic"
+
+# Supabase settings used when the "Deploy backend" workflow deploys the server functions.
+# Each function checks who is calling by itself, so the gateway's own JWT check is off.
+
+[functions.bootstrap-admin]
+verify_jwt = false
+
+[functions.approve-application]
+verify_jwt = false
+
+[functions.reset-password]
+verify_jwt = false
+
+[functions.mailer]
+verify_jwt = false
+
+[functions.passkey]
+verify_jwt = false

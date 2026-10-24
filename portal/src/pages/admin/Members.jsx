@@ -9,7 +9,7 @@ import { AttendanceCell, MemberProfile, Tabs } from '../../components/bits';
 import { useToast } from '../../components/Toasts';
 
 export default function Members() {
-  const { state, actions } = useStore();
+  const { state, viewer, actions } = useStore();
   const toast = useToast();
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
@@ -22,13 +22,23 @@ export default function Members() {
     .filter((u) => !q || `${u.name} ${u.roll} ${u.email}`.toLowerCase().includes(q.toLowerCase()))
     .map((u) => ({ u, att: attendanceStats(state, u.id), ts: taskStats(state, u.id) })), [state, q, filter]);
 
-  const changeLead = (u, leadId) => {
-    const r = actions.setLead(u.id, leadId);
+  const changeLead = async (u, leadId) => {
+    const r = await actions.setLead(u.id, leadId);
+    if (r.error) return toast(r.error, 'error');
     toast(r.lead ? `${r.name} now reports to ${r.lead}.` : `${r.name} no longer has a club lead.`);
+    return undefined;
   };
-  const toggleRole = (u) => {
-    const r = actions.toggleLeadRole(u.id);
+  const toggleRole = async (u) => {
+    const r = await actions.toggleLeadRole(u.id);
+    if (r.error) return toast(r.error, 'error');
     toast(r.promoted ? `${r.name} is now a club lead.` : `${r.name} is a member again.${r.freed ? ` ${r.freed} members need a new lead.` : ''}`);
+    return undefined;
+  };
+  const toggleActive = async (u) => {
+    const r = await actions.setActive(u.id, !u.active);
+    if (r.error) return toast(r.error, 'error');
+    toast(u.active ? `${u.name} deactivated. They can no longer log in.` : `${u.name} reactivated.`);
+    return undefined;
   };
 
   return (
@@ -76,8 +86,8 @@ export default function Members() {
                   <td className="td font-mono text-[13px]">{ts.pass} / {ts.assigned}</td>
                   <td className="td">
                     <div className="flex justify-end gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => toggleRole(u)}>{u.role === 'lead' ? 'Remove lead' : 'Make lead'}</Button>
-                      <Button size="sm" variant="ghost" onClick={() => { actions.setActive(u.id, !u.active); toast(u.active ? `${u.name} deactivated. They can no longer log in.` : `${u.name} reactivated.`); }}>
+                      <Button size="sm" variant="secondary" onClick={() => toggleRole(u)} disabled={u.role === 'admin'}>{u.role === 'lead' ? 'Remove lead' : 'Make lead'}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => toggleActive(u)} disabled={u.id === viewer.id}>
                         {u.active ? 'Deactivate' : 'Reactivate'}
                       </Button>
                     </div>

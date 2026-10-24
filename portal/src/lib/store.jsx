@@ -1,367 +1,332 @@
-// The demo "backend". All data lives in the browser (localStorage) for now.
-// In stage 2 each action below becomes a Supabase call; the pages stay the same.
+// The portal's data, loaded from Supabase.
+// Each person only receives what the database rules allow them to see. The data is reloaded
+// automatically when something changes (live updates), so every screen stays current.
+// Pages use `state` (same shape as before) and `actions` (each returns { error } or a result).
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { createSeed, DEMO_PASSWORD } from './demoData';
-import { getUser, inScope, sessionState, currentSession } from './selectors';
-import { fmtDate } from './dates';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { callFunction, friendly, supabase } from './supabase';
+import { getUser } from './selectors';
 
-const STORAGE_KEY = 'osmic-demo-v1';
 const StoreContext = createContext(null);
 
-const uid = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-export const newCode = () => Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+const EMPTY = {
+  users: [], applications: [], sessions: [], attendance: [], tasks: [], submissions: [],
+  leaves: [], announcements: [], notifications: [], outbox: [], passkeys: [],
+};
 
-function load() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.version === 1) return parsed;
-    }
-  } catch { /* storage blocked or corrupt: fall back to fresh demo data */ }
-  return createSeed();
-}
+// ---------- database rows -> the shapes the pages use ----------
+const mapUser = (r, photos) => ({
+  id: r.id, name: r.name, email: r.email, roll: r.roll, mobile: r.mobile, whatsapp: r.whatsapp,
+  photo: r.photo_path ? photos[r.photo_path] || null : null, photoPath: r.photo_path,
+  role: r.role, leadId: r.lead_id, active: r.active, joinedAt: r.joined_at,
+});
+const mapApp = (r, photos) => ({
+  id: r.id, name: r.name, roll: r.roll, email: r.email, mobile: r.mobile, whatsapp: r.whatsapp,
+  photo: r.photo_path ? photos[r.photo_path] || null : null, status: r.status, leadId: r.lead_id || '', appliedAt: r.applied_at,
+});
+const mapSession = (r) => ({ id: r.id, title: r.title, startedAt: r.started_at, expiresAt: r.expires_at, closedAt: r.closed_at, code: '' });
+const mapAttendance = (r) => ({ id: r.id, sessionId: r.session_id, userId: r.user_id, status: r.status, markedAt: r.marked_at });
+const mapTask = (r, assignees) => ({
+  id: r.id, title: r.title, description: r.description, deadline: r.deadline, createdBy: r.created_by, createdAt: r.created_at,
+  assignees: assignees.filter((a) => a.task_id === r.id).map((a) => a.user_id),
+});
+const mapSubmission = (r) => ({
+  id: r.id, taskId: r.task_id, userId: r.user_id, link: r.link, fileName: r.file_name, filePath: r.file_path, note: r.note,
+  submittedAt: r.submitted_at, verdict: r.verdict, comment: r.comment, reviewedBy: r.reviewed_by,
+});
+const mapLeave = (r) => ({ id: r.id, userId: r.user_id, from: r.from_date, to: r.to_date, reason: r.reason, status: r.status, note: r.note, appliedAt: r.applied_at });
+const mapAnnouncement = (r) => ({ id: r.id, title: r.title, message: r.message, postedAt: r.posted_at, by: r.posted_by, emailed: r.emailed });
+const mapNotification = (r) => ({ id: r.id, userId: r.user_id, text: r.text, link: r.link, at: r.created_at, read: r.read });
+const mapOutbox = (r) => ({ id: r.id, to: r.to_emails.length > 1 ? `${r.to_emails.length} people` : r.to_emails[0], subject: r.subject, at: r.sent_at || r.created_at, sent: !!r.sent_at, failed: !r.sent_at && r.attempts >= 5 });
+const mapPasskey = (r) => ({ id: r.id, device: r.device || 'This device', createdAt: r.created_at, lastUsedAt: r.last_used_at });
 
-// --- small helpers used inside actions (they change the draft state) ---
-function notify(st, userId, text, link) {
-  st.notifications.unshift({ id: uid('m'), userId, text, link: link || '', at: new Date().toISOString(), read: false });
-}
-function email(st, to, subject) {
-  st.outbox.unshift({ id: uid('e'), to, subject, at: new Date().toISOString() });
-  st.outbox = st.outbox.slice(0, 40);
-}
-const nowIso = () => new Date().toISOString();
+const rows = async (query) => {
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+};
 
 export function StoreProvider({ children }) {
-  const [state, setState] = useState(load);
-  const ref = useRef(state);
+  const [authReady, setAuthReady] = useState(false);
+  const [userId, setUserId] = useState(null);
+  const [data, setData] = useState(EMPTY);
+  const [loadedFor, setLoadedFor] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [hasAdmin, setHasAdmin] = useState(null);
+  const loadingRef = useRef(null);
 
+  // ---------- who is signed in ----------
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
-  }, [state]);
-
-  const actions = useMemo(() => {
-    // Copy the state, let fn change the copy, save it, and return fn's result.
-    const mutate = (fn) => {
-      const next = structuredClone(ref.current);
-      const result = fn(next);
-      ref.current = next;
-      setState(next);
-      return result || {};
-    };
-    const viewerOf = (st) => (st.session ? getUser(st, st.session.userId) : null);
-
-    return {
-      // ---------- auth ----------
-      login(emailAddr, password) {
-        return mutate((st) => {
-          const u = st.users.find((x) => x.email.toLowerCase() === emailAddr.trim().toLowerCase());
-          if (!u || password !== DEMO_PASSWORD) return { error: 'Incorrect email or password.' };
-          if (!u.active) return { error: 'Your account is inactive. Contact the admin.' };
-          st.session = { userId: u.id };
-          return { user: u };
-        });
-      },
-      loginAs(userId) {
-        return mutate((st) => {
-          st.session = { userId };
-          return { user: getUser(st, userId) };
-        });
-      },
-      // Face ID / fingerprint (admin only)
-      addPasskey(userId, key) {
-        return mutate((st) => {
-          const u = getUser(st, userId);
-          if (!u || u.role !== 'admin') return { error: 'Only the admin can use Face ID / fingerprint sign-in.' };
-          u.passkeys = [...(u.passkeys || []), key];
-          return { ok: true };
-        });
-      },
-      removePasskey(userId, keyId) {
-        mutate((st) => {
-          const u = getUser(st, userId);
-          if (u) u.passkeys = (u.passkeys || []).filter((k) => k.id !== keyId);
-        });
-      },
-      loginWithPasskey(keyId) {
-        return mutate((st) => {
-          const u = st.users.find((x) => x.role === 'admin' && x.active && (x.passkeys || []).some((k) => k.id === keyId));
-          if (!u) return { error: 'This Face ID / fingerprint is not linked to an admin account.' };
-          u.passkeys = u.passkeys.map((k) => (k.id === keyId ? { ...k, lastUsedAt: new Date().toISOString() } : k));
-          st.session = { userId: u.id };
-          return { user: u };
-        });
-      },
-      logout() {
-        mutate((st) => { st.session = null; });
-      },
-      resetDemo() {
-        // Keep the admin's Face ID / fingerprint so a reset doesn't lock them out of it.
-        const keys = getUser(ref.current, 'u0')?.passkeys || [];
-        const fresh = createSeed();
-        const admin = getUser(fresh, 'u0');
-        if (admin) admin.passkeys = keys;
-        ref.current = fresh;
-        setState(fresh);
-      },
-
-      // ---------- applications (admin only decides) ----------
-      submitApplication(data) {
-        return mutate((st) => {
-          const em = data.email.trim().toLowerCase();
-          const roll = data.roll.trim().toUpperCase();
-          const taken = st.users.some((u) => u.email.toLowerCase() === em || u.roll === roll)
-            || st.applications.some((a) => a.status === 'pending' && (a.email.toLowerCase() === em || a.roll === roll));
-          if (taken) return { error: 'An account or application with this email or roll number already exists.' };
-          st.applications.unshift({ id: uid('p'), ...data, email: em, roll, status: 'pending', leadId: '', appliedAt: nowIso() });
-          return { ok: true };
-        });
-      },
-      setApplicationLead(appId, leadId) {
-        mutate((st) => { const a = st.applications.find((x) => x.id === appId); if (a) a.leadId = leadId; });
-      },
-      approveApplication(appId) {
-        return mutate((st) => {
-          const viewer = viewerOf(st);
-          if (viewer?.role !== 'admin') return { error: 'Only the admin can approve applications.' };
-          const a = st.applications.find((x) => x.id === appId);
-          if (!a) return { error: 'Application not found.' };
-          if (!a.leadId) return { error: `Choose a club lead for ${a.name} before approving.` };
-          a.status = 'approved';
-          const id = uid('u');
-          st.users.push({ id, name: a.name, email: a.email, roll: a.roll, mobile: a.mobile, whatsapp: a.whatsapp, photo: a.photo, role: 'member', leadId: a.leadId, active: true, joinedAt: nowIso() });
-          email(st, a.email, 'Welcome to OSMIC! Set your password');
-          const lead = getUser(st, a.leadId);
-          notify(st, a.leadId, `${a.name} joined your team`, '/lead/team');
-          return { ok: true, name: a.name, lead: lead?.name };
-        });
-      },
-      rejectApplication(appId) {
-        return mutate((st) => {
-          const a = st.applications.find((x) => x.id === appId);
-          if (!a) return {};
-          a.status = 'rejected';
-          email(st, a.email, 'Your OSMIC application');
-          return { ok: true, name: a.name };
-        });
-      },
-
-      // ---------- members and teams ----------
-      setLead(userId, leadId) {
-        return mutate((st) => {
-          const u = getUser(st, userId);
-          if (!u) return {};
-          u.leadId = leadId || null;
-          if (leadId) notify(st, leadId, `${u.name} was added to your team`, '/lead/team');
-          return { ok: true, name: u.name, lead: leadId ? getUser(st, leadId)?.name : null };
-        });
-      },
-      toggleLeadRole(userId) {
-        return mutate((st) => {
-          const u = getUser(st, userId);
-          if (!u) return {};
-          if (u.role === 'lead') {
-            u.role = 'member';
-            let freed = 0;
-            st.users.forEach((x) => { if (x.leadId === u.id) { x.leadId = null; freed += 1; } });
-            return { ok: true, promoted: false, name: u.name, freed };
-          }
-          u.role = 'lead';
-          u.leadId = null;
-          notify(st, u.id, 'You are now a club lead', '/lead');
-          email(st, u.email, 'You are now an OSMIC club lead');
-          return { ok: true, promoted: true, name: u.name };
-        });
-      },
-      setActive(userId, active) {
-        return mutate((st) => {
-          const u = getUser(st, userId);
-          if (u) u.active = active;
-          return { ok: true, name: u?.name };
-        });
-      },
-      addToMyTeam(userId) {
-        return mutate((st) => {
-          const viewer = viewerOf(st);
-          const u = getUser(st, userId);
-          if (!viewer || viewer.role !== 'lead' || !u) return { error: 'Not allowed.' };
-          if (u.leadId) return { error: `${u.name} is already in a team.` };
-          u.leadId = viewer.id;
-          notify(st, u.id, `${viewer.name} is now your club lead`, '/member');
-          return { ok: true, name: u.name };
-        });
-      },
-      removeFromMyTeam(userId) {
-        return mutate((st) => {
-          const viewer = viewerOf(st);
-          const u = getUser(st, userId);
-          if (!viewer || !u || u.leadId !== viewer.id) return { error: 'Not allowed.' };
-          u.leadId = null;
-          return { ok: true, name: u.name };
-        });
-      },
-
-      // ---------- attendance (admin only) ----------
-      startSession(title, minutes) {
-        return mutate((st) => {
-          const viewer = viewerOf(st);
-          if (viewer?.role !== 'admin') return { error: 'Only the admin runs attendance.' };
-          const cur = currentSession(st);
-          if (cur && !cur.closedAt) cur.closedAt = nowIso();
-          const code = newCode();
-          st.sessions.push({ id: uid('s'), title: title.trim() || `Session on ${fmtDate(nowIso())}`, startedAt: nowIso(), code, closedAt: null, expiresAt: new Date(Date.now() + minutes * 60000).toISOString() });
-          return { ok: true, code };
-        });
-      },
-      closeSession(sessionId) {
-        mutate((st) => { const s = st.sessions.find((x) => x.id === sessionId); if (s) s.closedAt = nowIso(); });
-      },
-      extendSession(sessionId, minutes) {
-        mutate((st) => {
-          const s = st.sessions.find((x) => x.id === sessionId);
-          if (!s) return;
-          s.closedAt = null;
-          const base = Math.max(Date.now(), new Date(s.expiresAt).getTime());
-          s.expiresAt = new Date(base + minutes * 60000).toISOString();
-        });
-      },
-      markAttendance(code) {
-        return mutate((st) => {
-          const viewer = viewerOf(st);
-          const s = currentSession(st);
-          if (!viewer || !s || sessionState(s) !== 'open') return { error: 'No session is open right now.' };
-          if (st.attendance.some((a) => a.sessionId === s.id && a.userId === viewer.id)) return { error: 'You have already checked in for this session.' };
-          if (code.trim().toUpperCase() !== s.code) return { error: 'Wrong code. Check the screen and try again.' };
-          st.attendance.push({ id: uid('a'), sessionId: s.id, userId: viewer.id, status: 'pending', markedAt: nowIso() });
-          return { ok: true };
-        });
-      },
-      setCheckin(attendanceId, status) {
-        return mutate((st) => {
-          const a = st.attendance.find((x) => x.id === attendanceId);
-          if (!a) return {};
-          a.status = status;
-          const s = st.sessions.find((x) => x.id === a.sessionId);
-          notify(st, a.userId, status === 'verified' ? `Attendance verified for ${s?.title}` : `Attendance rejected for ${s?.title}`, '/member/attendance');
-          return { ok: true, name: getUser(st, a.userId)?.name };
-        });
-      },
-      verifyAllPending(sessionId) {
-        return mutate((st) => {
-          let n = 0;
-          const s = st.sessions.find((x) => x.id === sessionId);
-          st.attendance.forEach((a) => {
-            if (a.sessionId === sessionId && a.status === 'pending') {
-              a.status = 'verified';
-              n += 1;
-              notify(st, a.userId, `Attendance verified for ${s?.title}`, '/member/attendance');
-            }
-          });
-          return { ok: true, count: n };
-        });
-      },
-
-      // ---------- tasks ----------
-      createTask({ title, description, deadline, assignees }) {
-        return mutate((st) => {
-          const viewer = viewerOf(st);
-          if (!viewer || viewer.role === 'member') return { error: 'Not allowed.' };
-          const allowed = assignees.filter((id) => inScope(st, viewer, id));
-          if (!allowed.length) return { error: 'Choose at least one member.' };
-          const task = { id: uid('t'), title: title.trim(), description: description.trim(), deadline, assignees: allowed, createdBy: viewer.id, createdAt: nowIso() };
-          st.tasks.unshift(task);
-          allowed.forEach((id) => {
-            notify(st, id, `New task: ${task.title}`, '/member/tasks');
-            const u = getUser(st, id);
-            if (u) email(st, u.email, `New OSMIC task: ${task.title}`);
-          });
-          return { ok: true, count: allowed.length, id: task.id };
-        });
-      },
-      deleteTask(taskId) {
-        mutate((st) => {
-          st.tasks = st.tasks.filter((t) => t.id !== taskId);
-          st.submissions = st.submissions.filter((x) => x.taskId !== taskId);
-        });
-      },
-      submitWork(taskId, { link, fileName, note }) {
-        return mutate((st) => {
-          const viewer = viewerOf(st);
-          const task = st.tasks.find((t) => t.id === taskId);
-          if (!viewer || !task || !task.assignees.includes(viewer.id)) return { error: 'This task is not assigned to you.' };
-          st.submissions.push({ id: uid('sub'), taskId, userId: viewer.id, link: link || '', fileName: fileName || '', note: note || '', submittedAt: nowIso(), verdict: 'pending', comment: '', reviewedBy: null });
-          const reviewer = viewer.leadId || 'u0';
-          notify(st, reviewer, `${viewer.name} submitted ${task.title}`, viewer.leadId ? '/lead/tasks' : '/admin/tasks');
-          return { ok: true };
-        });
-      },
-      reviewSubmission(subId, verdict, comment) {
-        return mutate((st) => {
-          const viewer = viewerOf(st);
-          const sub = st.submissions.find((x) => x.id === subId);
-          if (!viewer || !sub || !inScope(st, viewer, sub.userId)) return { error: 'You can only review your own team.' };
-          if (sub.userId === viewer.id) return { error: 'You cannot review your own work.' };
-          sub.verdict = verdict;
-          sub.comment = comment || '';
-          sub.reviewedBy = viewer.id;
-          const task = st.tasks.find((t) => t.id === sub.taskId);
-          const u = getUser(st, sub.userId);
-          notify(st, sub.userId, `Your ${task?.title} was marked ${verdict === 'pass' ? 'Pass' : 'Fail'}`, '/member/tasks');
-          if (u) email(st, u.email, `Result for ${task?.title}: ${verdict === 'pass' ? 'Pass' : 'Fail'}`);
-          return { ok: true, name: u?.name };
-        });
-      },
-
-      // ---------- leave ----------
-      applyLeave({ from, to, reason }) {
-        return mutate((st) => {
-          const viewer = viewerOf(st);
-          if (!viewer) return { error: 'Not logged in.' };
-          if (to && to < from) return { error: 'The end date is before the start date.' };
-          st.leaves.unshift({ id: uid('l'), userId: viewer.id, from, to: to || from, reason: reason.trim(), status: 'pending', note: '', appliedAt: nowIso() });
-          if (viewer.leadId) notify(st, viewer.leadId, `${viewer.name} applied for leave`, '/lead/leaves');
-          return { ok: true };
-        });
-      },
-      decideLeave(leaveId, status, note) {
-        return mutate((st) => {
-          const viewer = viewerOf(st);
-          const l = st.leaves.find((x) => x.id === leaveId);
-          if (!viewer || !l || !inScope(st, viewer, l.userId)) return { error: 'You can only decide for your own team.' };
-          l.status = status;
-          l.note = note || '';
-          const u = getUser(st, l.userId);
-          notify(st, l.userId, `Your leave for ${fmtDate(l.from)} was ${status}`, '/member/leave');
-          if (u) email(st, u.email, `Leave ${status}`);
-          return { ok: true, name: u?.name };
-        });
-      },
-
-      // ---------- announcements ----------
-      postAnnouncement({ title, message, sendEmail }) {
-        return mutate((st) => {
-          const viewer = viewerOf(st);
-          if (!viewer || viewer.role === 'member') return { error: 'Not allowed.' };
-          st.announcements.unshift({ id: uid('n'), title: title.trim(), message: message.trim(), postedAt: nowIso(), by: viewer.id, emailed: !!sendEmail });
-          if (sendEmail) email(st, 'All members', `Announcement: ${title.trim()}`);
-          return { ok: true };
-        });
-      },
-      deleteAnnouncement(id) {
-        mutate((st) => { st.announcements = st.announcements.filter((a) => a.id !== id); });
-      },
-
-      // ---------- notifications ----------
-      markAllRead(userId) {
-        mutate((st) => { st.notifications.forEach((n) => { if (n.userId === userId) n.read = true; }); });
-      },
-    };
+    let alive = true;
+    supabase.auth.getSession().then(({ data: s }) => {
+      if (!alive) return;
+      setUserId(s.session?.user?.id ?? null);
+      setAuthReady(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user?.id ?? null);
+    });
+    // Only trust a real answer: if the server can't be reached, don't show first-time setup.
+    supabase.rpc('has_admin').then(({ data: h, error }) => { if (alive && !error && typeof h === 'boolean') setHasAdmin(h); });
+    return () => { alive = false; sub.subscription.unsubscribe(); };
   }, []);
 
-  const viewer = state.session ? getUser(state, state.session.userId) : null;
-  const value = useMemo(() => ({ state, viewer, actions }), [state, viewer, actions]);
+  // ---------- load everything this person may see ----------
+  const load = useCallback(async () => {
+    if (!userId) return;
+    const run = (async () => {
+      try {
+        const [profiles, applications, sessions, attendance, tasks, assignees, submissions, leaves, announcements, notifications, outbox, passkeys] = await Promise.all([
+          rows(supabase.from('profiles').select('*').order('name')),
+          rows(supabase.from('applications').select('*').order('applied_at', { ascending: false })),
+          rows(supabase.from('sessions').select('*').order('started_at')),
+          rows(supabase.from('attendance').select('*')),
+          rows(supabase.from('tasks').select('*').order('created_at', { ascending: false })),
+          rows(supabase.from('task_assignees').select('*')),
+          rows(supabase.from('submissions').select('*').order('submitted_at')),
+          rows(supabase.from('leaves').select('*').order('applied_at', { ascending: false })),
+          rows(supabase.from('announcements').select('*').order('posted_at', { ascending: false }).limit(50)),
+          rows(supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(50)),
+          rows(supabase.from('outbox').select('id, to_emails, subject, created_at, sent_at, attempts').order('created_at', { ascending: false }).limit(20)),
+          rows(supabase.from('passkeys').select('id, device, created_at, last_used_at').order('created_at')),
+        ]);
+        // Photos are private: get short-lived links for the ones this person can see.
+        const paths = [...new Set([...profiles, ...applications].map((r) => r.photo_path).filter(Boolean))];
+        const photos = {};
+        if (paths.length) {
+          const { data: signed } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
+          (signed || []).forEach((s) => { if (s.signedUrl) photos[s.path] = s.signedUrl; });
+        }
+        const next = {
+          users: profiles.map((r) => mapUser(r, photos)),
+          applications: applications.map((r) => mapApp(r, photos)),
+          sessions: sessions.map(mapSession),
+          attendance: attendance.map(mapAttendance),
+          tasks: tasks.map((r) => mapTask(r, assignees)),
+          submissions: submissions.map(mapSubmission),
+          leaves: leaves.map(mapLeave),
+          announcements: announcements.map(mapAnnouncement),
+          notifications: notifications.map(mapNotification),
+          outbox: outbox.map(mapOutbox),
+          passkeys: passkeys.map(mapPasskey),
+        };
+        // The admin also gets the code of the latest session.
+        const me = profiles.find((p) => p.id === userId);
+        const latest = next.sessions[next.sessions.length - 1];
+        if (me?.role === 'admin' && latest) {
+          const { data: code } = await supabase.rpc('session_code', { p_session: latest.id });
+          latest.code = code || '';
+        }
+        setData(next);
+        setLoadedFor(userId);
+        setLoadError('');
+      } catch (err) {
+        setLoadError(await friendly(err));
+        setLoadedFor(userId);
+      }
+    })();
+    loadingRef.current = run;
+    return run;
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) { setData(EMPTY); setLoadedFor(null); return undefined; }
+    load();
+    // Live updates: reload shortly after anything changes in the database.
+    let timer = null;
+    const reload = () => { clearTimeout(timer); timer = setTimeout(load, 350); };
+    const channel = supabase.channel(`osmic-${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public' }, reload)
+      .subscribe();
+    const onFocus = () => reload();
+    window.addEventListener('focus', onFocus);
+    return () => { clearTimeout(timer); supabase.removeChannel(channel); window.removeEventListener('focus', onFocus); };
+  }, [userId, load]);
+
+  const state = useMemo(() => ({ ...data, session: userId ? { userId } : null }), [data, userId]);
+  const viewer = userId ? getUser(state, userId) || null : null;
+
+  // A deactivated (or removed) account is signed out.
+  useEffect(() => {
+    if (userId && loadedFor === userId && !loadError && (!viewer || !viewer.active)) {
+      supabase.auth.signOut();
+    }
+  }, [userId, loadedFor, loadError, viewer]);
+
+  // ---------- actions ----------
+  const actions = useMemo(() => {
+    // Send any queued emails now instead of waiting for the 5-minute job.
+    const flushMail = () => { supabase.functions.invoke('mailer', { body: {} }).catch(() => {}); };
+    // Run a change, reload the data, and return { error } or the result.
+    const run = async (fn, { mail = false } = {}) => {
+      try {
+        const result = await fn();
+        await load();
+        if (mail) flushMail();
+        return result || { ok: true };
+      } catch (err) {
+        return { error: await friendly(err) };
+      }
+    };
+    const check = ({ error }) => { if (error) throw error; };
+    const nameOf = (id) => getUser(data, id)?.name || 'This member';
+
+    return {
+      // ----- account -----
+      async login(email, password) {
+        const { data: res, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        if (error) return { error: await friendly(error) };
+        const { data: p } = await supabase.from('profiles').select('id, role, active').eq('id', res.user.id).maybeSingle();
+        if (!p || !p.active) {
+          await supabase.auth.signOut();
+          return { error: 'Your account is inactive. Contact the admin.' };
+        }
+        return { user: p };
+      },
+      async logout() {
+        await supabase.auth.signOut();
+      },
+      async requestPasswordReset(email) {
+        try { await callFunction('reset-password', { email }); return { ok: true }; } catch (err) { return { error: err.message }; }
+      },
+      async bootstrapAdmin(email, name) {
+        try { await callFunction('bootstrap-admin', { email, name }); return { ok: true }; } catch (err) { return { error: err.message }; }
+      },
+      // Opened from the email link: turn the one-time token into a signed-in session.
+      async useEmailLink(tokenHash, type) {
+        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+        return error ? { error: /expired|invalid/i.test(error.message) ? 'This link has expired or was already used. Use "Forgot password?" to get a new one.' : await friendly(error) } : { ok: true };
+      },
+      async setPassword(password) {
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) return { error: await friendly(error) };
+        await load();
+        return { ok: true };
+      },
+      async signInWithTokenHash(tokenHash) {
+        let { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'magiclink' });
+        if (error) ({ error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'email' }));
+        return error ? { error: await friendly(error) } : { ok: true };
+      },
+
+      // ----- applications -----
+      async submitApplication(f) {
+        try {
+          let photoPath = null;
+          if (f.photo) {
+            const blob = await (await fetch(f.photo)).blob();
+            photoPath = `applications/${crypto.randomUUID()}.jpg`;
+            const { error: upErr } = await supabase.storage.from('photos').upload(photoPath, blob, { contentType: 'image/jpeg' });
+            if (upErr) throw upErr;
+          }
+          const { error } = await supabase.rpc('submit_application', {
+            p_name: f.name, p_roll: f.roll, p_email: f.email, p_mobile: f.mobile, p_whatsapp: f.whatsapp, p_photo_path: photoPath,
+          });
+          if (error) throw error;
+          return { ok: true };
+        } catch (err) {
+          return { error: await friendly(err) };
+        }
+      },
+      setApplicationLead: (appId, leadId) => run(async () => check(await supabase.from('applications').update({ lead_id: leadId || null }).eq('id', appId))),
+      approveApplication: (appId) => run(async () => callFunction('approve-application', { applicationId: appId })),
+      rejectApplication: (appId) => run(async () => {
+        check(await supabase.from('applications').update({ status: 'rejected' }).eq('id', appId));
+        return { name: data.applications.find((a) => a.id === appId)?.name };
+      }, { mail: true }),
+
+      // ----- members and teams -----
+      setLead: (id, leadId) => run(async () => {
+        check(await supabase.from('profiles').update({ lead_id: leadId || null }).eq('id', id));
+        return { name: nameOf(id), lead: leadId ? nameOf(leadId) : null };
+      }),
+      toggleLeadRole: (id) => run(async () => {
+        const u = getUser(data, id);
+        const promoted = u.role !== 'lead';
+        const freed = promoted ? 0 : data.users.filter((x) => x.leadId === id).length;
+        check(await supabase.from('profiles').update(promoted ? { role: 'lead', lead_id: null } : { role: 'member' }).eq('id', id));
+        return { promoted, name: u.name, freed };
+      }, { mail: true }),
+      setActive: (id, active) => run(async () => { check(await supabase.from('profiles').update({ active }).eq('id', id)); return { name: nameOf(id) }; }),
+      addToMyTeam: (id) => run(async () => { check(await supabase.rpc('add_to_my_team', { p_user: id })); return { name: nameOf(id) }; }),
+      removeFromMyTeam: (id) => run(async () => { check(await supabase.rpc('remove_from_my_team', { p_user: id })); return { name: nameOf(id) }; }),
+
+      // ----- attendance (admin) -----
+      startSession: (title, minutes) => run(async () => {
+        const { data: s, error } = await supabase.rpc('start_session', { p_title: title, p_minutes: minutes });
+        if (error) throw error;
+        return { code: s.code };
+      }),
+      closeSession: (id) => run(async () => check(await supabase.from('sessions').update({ closed_at: new Date().toISOString() }).eq('id', id))),
+      extendSession: (id, minutes) => run(async () => {
+        const s = data.sessions.find((x) => x.id === id);
+        const base = Math.max(Date.now(), new Date(s?.expiresAt || Date.now()).getTime());
+        check(await supabase.from('sessions').update({ closed_at: null, expires_at: new Date(base + minutes * 60000).toISOString() }).eq('id', id));
+      }),
+      markAttendance: (code) => run(async () => check(await supabase.rpc('mark_attendance', { p_code: code }))),
+      setCheckin: (id, status) => run(async () => {
+        check(await supabase.from('attendance').update({ status }).eq('id', id));
+        return { name: nameOf(data.attendance.find((a) => a.id === id)?.userId) };
+      }),
+      verifyAllPending: (sessionId) => run(async () => {
+        const { data: n, error } = await supabase.rpc('verify_all_pending', { p_session: sessionId });
+        if (error) throw error;
+        return { count: n };
+      }),
+
+      // ----- tasks -----
+      createTask: ({ title, description, deadline, assignees }) => run(async () => {
+        const { data: t, error } = await supabase.rpc('create_task', { p_title: title, p_description: description, p_deadline: deadline, p_assignees: assignees });
+        if (error) throw error;
+        return { count: t.count, id: t.id };
+      }, { mail: true }),
+      deleteTask: (id) => run(async () => check(await supabase.from('tasks').delete().eq('id', id))),
+      submitWork: (taskId, { link, file, note }) => run(async () => {
+        let filePath = null;
+        if (file) {
+          const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);
+          filePath = `${userId}/${taskId}/${Date.now()}-${safe}`;
+          const { error: upErr } = await supabase.storage.from('submissions').upload(filePath, file, { contentType: file.type || 'application/octet-stream' });
+          if (upErr) throw upErr;
+        }
+        check(await supabase.from('submissions').insert({ task_id: taskId, user_id: userId, link: link || '', file_path: filePath, file_name: file ? file.name : '', note: note || '' }));
+      }),
+      reviewSubmission: (id, verdict, comment) => run(async () => {
+        check(await supabase.from('submissions').update({ verdict, comment: comment || '' }).eq('id', id));
+        return { name: nameOf(data.submissions.find((s) => s.id === id)?.userId) };
+      }, { mail: true }),
+      async openFile(sub) {
+        const { data: s, error } = await supabase.storage.from('submissions').createSignedUrl(sub.filePath, 300);
+        if (error) return { error: await friendly(error) };
+        window.open(s.signedUrl, '_blank', 'noopener');
+        return { ok: true };
+      },
+
+      // ----- leave -----
+      applyLeave: ({ from, to, reason }) => run(async () => {
+        if (to && to < from) throw new Error('The end date is before the start date.');
+        check(await supabase.from('leaves').insert({ user_id: userId, from_date: from, to_date: to || from, reason: reason.trim() }));
+      }),
+      decideLeave: (id, status, note) => run(async () => {
+        check(await supabase.from('leaves').update({ status, note: note || '' }).eq('id', id));
+        return { name: nameOf(data.leaves.find((l) => l.id === id)?.userId) };
+      }, { mail: true }),
+
+      // ----- announcements and notifications -----
+      postAnnouncement: ({ title, message, sendEmail }) => run(async () => {
+        check(await supabase.from('announcements').insert({ title: title.trim(), message: message.trim(), emailed: !!sendEmail, posted_by: userId }));
+      }, { mail: true }),
+      deleteAnnouncement: (id) => run(async () => check(await supabase.from('announcements').delete().eq('id', id))),
+      markAllRead: () => run(async () => check(await supabase.rpc('mark_notifications_read'))),
+
+      // ----- Face ID / fingerprint devices -----
+      removePasskey: (id) => run(async () => check(await supabase.from('passkeys').delete().eq('id', id))),
+      reload: load,
+    };
+  }, [data, load, userId]);
+
+  const loading = !authReady || (userId && loadedFor !== userId);
+  const value = useMemo(() => ({ state, viewer, actions, loading, loadError, hasAdmin, setHasAdmin }), [state, viewer, actions, loading, loadError, hasAdmin]);
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 

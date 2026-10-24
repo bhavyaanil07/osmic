@@ -46,6 +46,8 @@ One-time setup: in this repository, **Settings > Pages > Source**, choose **GitH
 After that, every change pushed to `main` (website or portal) goes live in 1 to 2 minutes.
 You can follow each release in the **Actions** tab.
 
+**Turning on the real portal (logins, database, emails):** follow [SETUP.md](SETUP.md) once.
+
 To update the text later: open `content.js` on GitHub, click the pencil, edit, **Commit changes**.
 
 ## Run it on your computer

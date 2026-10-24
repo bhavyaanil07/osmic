@@ -43,7 +43,7 @@ export default function MyTeam() {
                         <td className="td font-mono text-[13px]">{ts.pass} / {ts.assigned}</td>
                         <td className="td font-mono text-[13px]">{ts.submitted}</td>
                         <td className="td text-right">
-                          <Button size="sm" variant="danger" icon={UserMinus} onClick={() => { const r = actions.removeFromMyTeam(u.id); toast(r.error || `${r.name} removed from your team. The admin can give them a new lead.`, r.error ? 'error' : 'success'); }}>
+                          <Button size="sm" variant="danger" icon={UserMinus} onClick={async () => { const r = await actions.removeFromMyTeam(u.id); toast(r.error || `${r.name} removed from your team. The admin can give them a new lead.`, r.error ? 'error' : 'success'); }}>
                             Remove from team
                           </Button>
                         </td>
@@ -65,7 +65,7 @@ export default function MyTeam() {
                   className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
                   <Avatar name={u.name} photo={u.photo} size={36} />
                   <span className="flex min-w-0 flex-1 flex-col"><span className="truncate font-semibold">{u.name}</span><span className="font-mono text-xs text-slate-500">{u.roll}</span></span>
-                  <Button size="sm" icon={UserPlus} onClick={() => { const r = actions.addToMyTeam(u.id); toast(r.error || `${r.name} added to your team.`, r.error ? 'error' : 'success'); }}>Add</Button>
+                  <Button size="sm" icon={UserPlus} onClick={async () => { const r = await actions.addToMyTeam(u.id); toast(r.error || `${r.name} added to your team.`, r.error ? 'error' : 'success'); }}>Add</Button>
                 </motion.li>
               ))}
             </AnimatePresence>

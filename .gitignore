@@ -1,2 +1,5 @@
 _site/
 node_modules/
+.env.local
+node_modules/
+supabase/.temp/

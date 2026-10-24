@@ -20,9 +20,17 @@ Open the link it prints (usually http://localhost:5173).
 The portal is published together with the OSMIC website by the workflow in `.github/workflows/deploy.yml` (repo root),
 at **https://bhavyaanil07.github.io/osmic/portal/**.
 
-## Stage 2 plan
+## How it works
 
-1. Create a Supabase project (free) and run the database script (tables + security rules).
-2. Swap the demo store for Supabase calls: logins, data and file storage.
-3. Add the approval Edge Function: creates the account and sends the "set your password" email.
-4. Connect Resend for automatic emails, plus a scheduled job for deadline reminders and the daily summary.
+- **Database, logins and files:** Supabase. The tables and security rules are in `../supabase/schema.sql`.
+- **Server functions** (`../supabase/functions/`):
+  - `approve-application`: creates the account and emails the set-password link;
+  - `bootstrap-admin`: first-time admin setup;
+  - `reset-password`;
+  - `passkey`: server-checked Face ID / fingerprint sign-in;
+  - `mailer`: queued emails, deadline reminders and the 8 AM summary, run every 5 minutes.
+- **Emails** are sent from the club Gmail account.
+
+First-time setup: see [../SETUP.md](../SETUP.md). Without the Supabase settings, the portal shows an "almost ready" notice.
+
+To run it locally against the real project, create `portal/.env.local` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_KEY` (the publishable key).

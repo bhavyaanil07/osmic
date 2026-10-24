@@ -23,12 +23,18 @@ export default function Attendance() {
   const past = [...state.sessions].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).filter((s) => !(open && s.id === cur.id));
   const total = people(state).length;
 
-  const start = (e) => {
+  const start = async (e) => {
     e.preventDefault();
-    const r = actions.startSession(title, Number(minutes));
+    const r = await actions.startSession(title, Number(minutes));
     if (r.error) return toast(r.error, 'error');
     setTitle('');
     toast(`Session started. Show code ${r.code} in the room.`);
+    return undefined;
+  };
+  const act = async (fn, okText) => {
+    const r = await fn();
+    if (r.error) toast(r.error, 'error');
+    else if (okText) toast(typeof okText === 'function' ? okText(r) : okText);
   };
 
   return (
@@ -50,8 +56,8 @@ export default function Attendance() {
                 </div>
                 <CodeTiles code={cur.code} />
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" size="sm" icon={Clock} onClick={() => { actions.extendSession(cur.id, 5); toast('Added 5 more minutes.'); }}>+5 minutes</Button>
-                  <Button variant="danger" size="sm" icon={Square} onClick={() => { actions.closeSession(cur.id); toast('Session closed. The code no longer works.'); }}>Close session</Button>
+                  <Button variant="secondary" size="sm" icon={Clock} onClick={() => act(() => actions.extendSession(cur.id, 5), 'Added 5 more minutes.')}>+5 minutes</Button>
+                  <Button variant="danger" size="sm" icon={Square} onClick={() => act(() => actions.closeSession(cur.id), 'Session closed. The code no longer works.')}>Close session</Button>
                 </div>
               </motion.div>
             ) : (
@@ -80,7 +86,7 @@ export default function Attendance() {
         <Card className="overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 p-5 pb-3">
             <SectionTitle title={`Step 2: verify check-ins${cur ? ` · ${cur.title}` : ''}`} sub={`${checkins.length} of ${total} entered the code · ${pending} waiting for you`} />
-            <Button variant="success" size="sm" icon={CheckCheck} disabled={!pending} onClick={() => { const r = actions.verifyAllPending(cur.id); toast(`Verified ${r.count} check-ins.`); }}>Verify all pending</Button>
+            <Button variant="success" size="sm" icon={CheckCheck} disabled={!pending} onClick={() => act(() => actions.verifyAllPending(cur.id), (r) => `Verified ${r.count} check-ins.`)}>Verify all pending</Button>
           </div>
           {checkins.length === 0 ? (
             <EmptyState icon={Clock} title="No one has entered the code yet" text="Check-ins appear here live as members type the code." />
@@ -97,8 +103,8 @@ export default function Attendance() {
                       <span className="w-20 text-[13px] text-slate-500">{fmtTime(a.markedAt)}</span>
                       <span className="w-24"><Badge tone={a.status} /></span>
                       <div className="flex gap-2">
-                        {a.status !== 'verified' && <Button size="sm" variant="success" icon={Check} onClick={() => { actions.setCheckin(a.id, 'verified'); toast(`${u.name} verified.`); }}>Verify</Button>}
-                        {a.status !== 'rejected' && <Button size="sm" variant="danger" icon={X} onClick={() => { actions.setCheckin(a.id, 'rejected'); toast(`${u.name} rejected and notified.`); }}>Reject</Button>}
+                        {a.status !== 'verified' && <Button size="sm" variant="success" icon={Check} onClick={() => act(() => actions.setCheckin(a.id, 'verified'), `${u.name} verified.`)}>Verify</Button>}
+                        {a.status !== 'rejected' && <Button size="sm" variant="danger" icon={X} onClick={() => act(() => actions.setCheckin(a.id, 'rejected'), `${u.name} rejected and notified.`)}>Reject</Button>}
                       </div>
                     </motion.li>
                   );
@@ -121,7 +127,7 @@ export default function Attendance() {
                     className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50">
                     <motion.span animate={{ rotate: isOpen ? 90 : 0 }}><ChevronRight className="h-4 w-4 text-slate-400" /></motion.span>
                     <span className="flex-1"><span className="font-semibold">{s.title}</span><span className="text-sm text-slate-500"> · {fmtDate(s.startedAt)}</span></span>
-                    <span className="font-mono text-xs text-slate-500">{s.code}</span>
+                    
                     <span className="text-sm font-semibold">{ver.length} verified</span>
                   </button>
                   <AnimatePresence initial={false}>
